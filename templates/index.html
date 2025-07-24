@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>AdivinAR</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body data-theme="light">
+  <div class="landing-box" id="playlist-select-screen">
+    <div class="landing-logo">
+      <span class="icon">🎵</span>
+      AdivinAR <span class="sub">AR</span>
+    </div>
+    <input id="playlist-input" class="landing-input" placeholder="Enlace o ID de Playlist Deezer">
+    <button id="start-with-playlist" class="landing-btn">Jugar con mi Playlist</button>
+    <button id="start-default" class="landing-btn">Jugar con la Predeterminada</button>
+  </div>
+  <div class="container" id="juego-main" style="display:none;">
+    <div class="top-bar">
+      <h1>🎶 HitMaster Arg</h1>
+      <button id="toggle-dark" class="dark-btn" title="Cambiar tema">🌗</button>
+    </div>
+    <p id="playlist-info" class="playlist-id"></p>
+    <div class="attempt-boxes" id="attempt-boxes"></div>
+    <p id="hint-text" class="hint"></p>
+
+    <audio id="audio-player" style="display:none" preload="auto" crossorigin="anonymous"></audio>
+    <button id="play-fragment" class="btn">▶ Escuchar Fragmento</button>
+
+    <div class="guess-area">
+      <input id="guess-input" class="input" list="autocomplete-list" placeholder="¿Qué canción es?">
+      <datalist id="autocomplete-list"></datalist>
+      <button id="guess-btn" class="btn">Adivinar</button>
+    </div>
+
+    <p id="result-message"></p>
+    <p id="attempts-remaining"></p>
+
+    <div id="historial" class="historial"></div>
+
+    <button id="reset-btn" class="btn center-btn" style="display:none;margin-top:14px;">
+      Siguiente Canción
+    </button>
+
+    <ul id="solved-songs" class="solved-list"></ul>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  <script>
+    document.getElementById("toggle-dark").addEventListener("click", function() {
+      const root = document.documentElement;
+      if (root.getAttribute("data-theme") === "light") {
+          root.setAttribute("data-theme", "dark");
+          this.innerText = "🌙";
+      } else {
+          root.setAttribute("data-theme", "light");
+          this.innerText = "🌗";
+      }
+    });
+  </script>
+</body>
+</html>

@@ -75,8 +75,6 @@ function lanzarConfetti() {
   }
 }
 
-
-
 function cargarHint() {
   btnPlayFragment.disabled = true;
   fetch(`/hint?attempt=${currentAttempt+1}`)

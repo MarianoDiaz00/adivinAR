@@ -57,6 +57,26 @@ function iniciarRonda() {
   cargarHint();
 }
 
+function animarInputError() {
+  const input = document.getElementById("guess-input");
+  input.classList.remove("wrong-guess"); // Por si ya tenía la animación
+  void input.offsetWidth; // Fuerza reflow
+  input.classList.add("wrong-guess");
+  setTimeout(() => input.classList.remove("wrong-guess"), 400);
+}
+
+function lanzarConfetti() {
+  if (window.confetti) {
+    confetti({
+      particleCount: 80,
+      spread: 70,
+      origin: { y: 0.5 }
+    });
+  }
+}
+
+
+
 function cargarHint() {
   btnPlayFragment.disabled = true;
   fetch(`/hint?attempt=${currentAttempt+1}`)
@@ -118,6 +138,7 @@ btnGuess.onclick = () => {
     currentAttempt = historial.length;
 
     if (data.correcto) {
+      lanzarConfetti();
       mostrarResultado("¡Correcto! Era: " + data.answer, true);
       btnNext.style.display = "block";
       if (data.preview_url) {
@@ -134,6 +155,7 @@ btnGuess.onclick = () => {
       }
       actualizarHistorialGlobal();
     } else {
+      animarInputError();
       mostrarResultado("Incorrecto", false);
       cargarHint()
       btnGuess.disabled = false;

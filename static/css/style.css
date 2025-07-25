@@ -96,7 +96,7 @@ body, html {
     outline: none;
     text-align: center;
 }
-.landing-input:focus {
+.landing-input {
     border: 1.5px solid var(--accent);
     background: #232547ee;
 }
@@ -180,6 +180,9 @@ body, html {
     color: var(--accent-hover);
     filter: brightness(1.16) drop-shadow(0 2px 7px #20df8586);
     background: var(--panel-bg);
+    outline: 2.5px solid var(--accent-hover);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px #21e7b646;
 }
 
 .playlist-id {
@@ -287,11 +290,12 @@ audio#audio-player { display: none !important; }
     min-width: 0;
     box-shadow: 0 1.5px 6px #0002;
 }
-.input:focus {
+.input:focus-visible {
     border: 1.7px solid var(--accent);
     background: #212541ee;
     outline: none;
     box-shadow: 0 2px 16px #20df8590;
+
 }
 .btn {
     background: var(--accent);
@@ -414,4 +418,28 @@ footer.footer {
     .landing-btn { font-size: 1.02em; }
     .landing-input { font-size: 0.98em; }
     .attempt-boxes { gap: 8px; }
+}
+
+@keyframes inputShake {
+  0%, 100% { transform: translateX(0);}
+  20% { transform: translateX(-10px);}
+  40% { transform: translateX(10px);}
+  60% { transform: translateX(-6px);}
+  80% { transform: translateX(6px);}
+}
+.input.wrong-guess {
+  animation: inputShake 0.38s;
+  border-color: var(--danger);
+}
+
+.input, .btn {
+  transition: background 0.22s, border 0.16s, box-shadow 0.21s;
+}
+
+.input:focus-visible,
+.btn:focus-visible,
+.dark-btn:focus-visible {
+  outline: 2.5px solid var(--accent-hover);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px #21e7b646;
 }

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <title>AdivinAR</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inte:wght@400;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body data-theme="dark">
@@ -27,12 +27,14 @@
     <p id="hint-text" class="hint"></p>
 
     <audio id="audio-player" style="display:none" preload="auto" crossorigin="anonymous"></audio>
-    <button id="play-fragment" class="btn">▶ Escuchar Fragmento</button>
+    <button id="play-fragment" class="btn" aria-label="Escuchar fragmento de la canción">
+      <span aria-hidden="true">🔊</span> Escuchar Fragmento
+    </button>
 
     <div class="guess-area">
-      <input id="guess-input" class="input" list="autocomplete-list" placeholder="¿Qué canción es?">
+      <input id="guess-input" class="input" list="autocomplete-list" placeholder="¿Qué canción es?" aria-label="Escribir nombre de la canción">
       <datalist id="autocomplete-list"></datalist>
-      <button id="guess-btn" class="btn">Adivinar</button>
+      <button id="guess-btn" class="btn" aria-label="Adivinar canción">Adivinar</button>
     </div>
 
     <p id="result-message"></p>
@@ -46,7 +48,7 @@
 
     <ul id="solved-songs" class="solved-list"></ul>
   </div>
-
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>
   <script>
     document.getElementById("toggle-dark").addEventListener("click", function() {

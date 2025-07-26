@@ -9,14 +9,21 @@
 </head>
 <body data-theme="dark">
   <div class="landing-box" id="playlist-select-screen">
-    <div class="landing-logo">
-      <span class="icon">🎵</span>
-      AdivinAR <span class="sub">AR</span>
+      <div class="landing-logo">
+        <span class="icon">🎵</span>
+        AdivinAR <span class="sub">AR</span>
+      </div>
+      <input id="playlist-input" class="landing-input" placeholder="Enlace o ID de Playlist Deezer">
+
+      <!-- Agrupa TODOS los botones acá -->
+      <div class="all-playlist-buttons">
+        <button id="start-with-playlist" class="landing-btn">Jugar con mi Playlist</button>
+        <button id="start-default" class="landing-btn">Rock en Español</button>
+        {% for pl in playlists if pl.name != "Predeterminada" %}
+          <button class="landing-btn playlist-btn" data-playlist-id="{{ pl.id }}">{{ pl.name }}</button>
+        {% endfor %}
+      </div>
     </div>
-    <input id="playlist-input" class="landing-input" placeholder="Enlace o ID de Playlist Deezer">
-    <button id="start-with-playlist" class="landing-btn">Jugar con mi Playlist</button>
-    <button id="start-default" class="landing-btn">Jugar con la Predeterminada</button>
-  </div>
   <div class="container" id="juego-main" style="display:none;">
     <div class="top-bar">
       <h1>🎶 AdivinAR</h1>

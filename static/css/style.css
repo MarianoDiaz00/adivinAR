@@ -25,7 +25,7 @@
     --accent-hover: #2946c5;
     --danger: #ed6a5e;
     --success: #63cc82;
-    --text: #ffffff;
+    --text: #000000;
     --text-subtle: #63677e;
     --attempt-box: #e4e5eb;
     --border: #e3e3ec;
@@ -106,7 +106,7 @@ body, html {
     background: var(--accent);
     color: #fff;
     border: none;
-    border-radius: 13px;
+    border-radius: 10px;
     padding: 15px 0 13px 0;
     font-size: 1.19em;
     font-weight: 700;
@@ -442,4 +442,17 @@ footer.footer {
   outline: 2.5px solid var(--accent-hover);
   outline-offset: 2px;
   box-shadow: 0 0 0 4px #21e7b646;
+}
+.all-playlist-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;      /* La separación vertical entre TODOS los botones */
+    width: 100%;
+    margin-top: 18px;
+    align-items: center; /* Centra los botones si el contenedor es más ancho */
+}
+
+.landing-btn, .playlist-btn {
+    width: 100%;
+    max-width: 295px;  /* Mismo que antes */
 }

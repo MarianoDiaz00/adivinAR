@@ -9,6 +9,13 @@ app.secret_key = config.Security.SECRET_KEY
 PLAYLIST_ID_DEFECTO = "14072713181"
 MAX_INTENTS = 5
 
+PLAYLISTS = [
+    {"id": "14072713181", "name": "Predeterminada"},
+    {"id": "14089683421", "name": "Rock Internacional"},
+    {"id": "14094110361", "name": "Musica Variedad Ingles"},
+    {"id": "14094507901", "name": "Musica Variedad Español"}
+]
+
 def nueva_lista_canciones(playlist_id):
     canciones = playlist_deezer(playlist_id)
     indices = list(range(len(canciones)))
@@ -17,12 +24,13 @@ def nueva_lista_canciones(playlist_id):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", playlists=PLAYLISTS)
 
 @app.route("/start", methods=["POST"])
 def start():
     data = request.get_json(force=True)
     entrada = data.get("playlist_id") or None
+    nombre_boton = data.get("playlist_name")
     if entrada:
         playlist_id = extraer_id_playlist(entrada)
     else:
@@ -40,7 +48,11 @@ def start():
     session['historial_global'] = []
     session.modified = True
 
-    nombre = f"Playlist {playlist_id}"
+    # Nombre bonito si viene del botón, si no, pone el default
+    if nombre_boton:
+        nombre = nombre_boton
+    else:
+        nombre = f"Playlist {playlist_id}"
     return jsonify({"message": "Juego iniciado", "playlist_name": nombre})
 
 @app.route("/hint")
@@ -59,11 +71,11 @@ def hint():
 
     pistas = []
     if intento >= 2:
+        pistas.append("Error!, sigue intentado")
+    if intento >= 3:
         mm = c['duration'] // 60
         ss = str(c['duration'] % 60).zfill(2)
         pistas.append(f"Duración: {mm}:{ss}")
-    if intento >= 3:
-        pistas.append("Error!, sigue intentado")
     if intento >= 4:
         pistas.append(f"Álbum: {c['album']}")
     if intento >= 5:
@@ -137,4 +149,4 @@ def historial_global():
     return jsonify(session.get('historial_global', []))
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()

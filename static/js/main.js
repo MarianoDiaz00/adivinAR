@@ -24,11 +24,11 @@ btnPlayFragment.disabled = true;
 btnStartPlaylist.onclick = () => startGame(document.getElementById("playlist-input").value.trim());
 btnStartDefault .onclick = () => startGame(null);
 
-function startGame(playlist_id) {
+function startGame(playlist_id, playlist_name = null) {
   fetch("/start", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ playlist_id })
+    body: JSON.stringify({ playlist_id, playlist_name })
   })
   .then(r => r.json())
   .then(data => {
@@ -238,3 +238,13 @@ toggleDarkBtn.onclick = () => {
   else
     body.setAttribute("data-theme", "light");
 })();
+
+document.addEventListener("DOMContentLoaded", function() {
+  document.querySelectorAll('.playlist-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const playlistId = this.getAttribute('data-playlist-id');
+      const playlistName = this.textContent;
+      startGame(playlistId, playlistName);
+    });
+  });
+});

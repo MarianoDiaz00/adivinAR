@@ -150,11 +150,13 @@ body, html {
 .top-bar {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
     width: 100%;
     margin-bottom: 2px;
     gap: 14px;
+    position: relative;
 }
+
 .top-bar h1 {
     flex: none;
     margin: 0;
@@ -163,7 +165,34 @@ body, html {
     font-weight: 700;
     letter-spacing: -0.5px;
     text-shadow: 0 1px 10px #23edb822;
+    display: flex;
+    align-items: center;
+    gap: 7px;
 }
+
+.top-bar-title {
+    margin: 0 auto;
+    font-size: 2em;
+    color: var(--accent);
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    text-shadow: 0 1px 10px #23edb822;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: center;
+    flex: 1 1 auto;
+}
+
+.top-bar .volver-btn, .top-bar .dark-btn {
+    flex: 0 0 auto;
+    min-width: 42px; /* Para que el dark-btn y volver tengan mismo ancho y no achiquen el título */
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .dark-btn {
     background: none;
     color: var(--accent);
@@ -216,7 +245,7 @@ body, html {
     display: flex;
     justify-content: center;
     gap: 13px;
-    margin: 26px 0 14px 0;
+    margin: 26px 0 6px 0;
 }
 .attempt-square {
     width: 39px;
@@ -272,7 +301,7 @@ body, html {
 }
 audio#audio-player { display: none !important; }
 .guess-area {
-    margin-top: 16px;
+    margin-top: 6px;
     display: flex;
     justify-content: center;
     gap: 9px;
@@ -328,7 +357,7 @@ audio#audio-player { display: none !important; }
 .current-attempts {
     background: var(--panel-bg);
     padding: 12px 14px 13px 14px;
-    margin: 13px 0 10px 0;
+    margin: 6px 0 10px 0;
     border-radius: 11px;
     min-height: 36px;
     color: var(--text-subtle);
@@ -446,13 +475,30 @@ footer.footer {
 .all-playlist-buttons {
     display: flex;
     flex-direction: column;
-    gap: 18px;      /* La separación vertical entre TODOS los botones */
+    gap: 18px;
     width: 100%;
     margin-top: 18px;
-    align-items: center; /* Centra los botones si el contenedor es más ancho */
+    align-items: center;
 }
 
 .landing-btn, .playlist-btn {
     width: 100%;
-    max-width: 295px;  /* Mismo que antes */
+    max-width: 295px;
+}
+
+.volver-btn {
+    background: var(--panel-bg);
+    color: var(--accent);
+    border: 1.5px solid var(--accent);
+    font-size: 0.98em;
+    padding: 7px 17px;
+    border-radius: 8px;
+    transition: background 0.14s, color 0.14s, border 0.14s;
+    box-shadow: none;
+}
+
+.volver-btn:hover {
+    background: var(--accent);
+    color: #fff;
+    border: 1.5px solid var(--accent-hover);
 }

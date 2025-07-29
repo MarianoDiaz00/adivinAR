@@ -17,7 +17,8 @@ const btnStartPlaylist = document.getElementById("start-with-playlist"),
       guessInput       = document.getElementById("guess-input"),
       autoList         = document.getElementById("autocomplete-list"),
       solvedListEl     = document.getElementById("solved-songs"),
-      toggleDarkBtn    = document.getElementById("toggle-dark");
+      toggleDarkBtn    = document.getElementById("toggle-dark"),
+      btnVolverPlaylist = document.getElementById("btn-volver-playlist");
 
 btnPlayFragment.disabled = true;
 
@@ -222,6 +223,22 @@ function clearAudio() {
   audioEl.pause();
   audioEl.currentTime = 0;
 }
+
+btnVolverPlaylist.onclick = () => {
+  document.getElementById("juego-main").style.display = "none";
+  document.getElementById("playlist-select-screen").style.display = "flex";
+
+  document.getElementById("playlist-input").value = "";
+  document.getElementById("playlist-info").textContent = "";
+  attemptsBox.innerHTML = "";
+  hintText.textContent = "";
+  resultMsg.textContent = "";
+  attemptsRemain.textContent = "";
+  historialEl.innerHTML = "";
+  solvedListEl.innerHTML = "";
+
+  fetch("/reset", { method: "POST" });
+};
 
 toggleDarkBtn.onclick = () => {
   const body = document.body;

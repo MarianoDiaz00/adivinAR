@@ -14,8 +14,6 @@
         AdivinAR <span class="sub">AR</span>
       </div>
       <input id="playlist-input" class="landing-input" placeholder="Enlace o ID de Playlist Deezer">
-
-      <!-- Agrupa TODOS los botones acá -->
       <div class="all-playlist-buttons">
         <button id="start-with-playlist" class="landing-btn">Jugar con mi Playlist</button>
         <button id="start-default" class="landing-btn">Rock en Español</button>
@@ -26,8 +24,11 @@
     </div>
   <div class="container" id="juego-main" style="display:none;">
     <div class="top-bar">
-      <h1>🎶 AdivinAR</h1>
-      <button id="toggle-dark" class="dark-btn" title="Cambiar tema">🌗</button>
+        <button id="btn-volver-playlist" class="btn volver-btn">⬅</button>
+        <div class="top-bar-title">
+            <span class="icon">🎵</span> AdivinAR <span class="sub">AR</span>
+        </div>
+        <button id="toggle-dark" class="dark-btn" title="Cambiar tema">🌙</button>
     </div>
     <p id="playlist-info" class="playlist-id"></p>
     <div class="attempt-boxes" id="attempt-boxes"></div>
@@ -44,14 +45,14 @@
       <button id="guess-btn" class="btn" aria-label="Adivinar canción">Adivinar</button>
     </div>
 
+    <button id="reset-btn" class="btn center-btn" style="display:none;margin-top:14px;">
+      Siguiente Canción
+    </button>
+
     <p id="result-message"></p>
     <p id="attempts-remaining"></p>
 
     <div id="historial" class="historial"></div>
-
-    <button id="reset-btn" class="btn center-btn" style="display:none;margin-top:14px;">
-      Siguiente Canción
-    </button>
 
     <ul id="solved-songs" class="solved-list"></ul>
   </div>

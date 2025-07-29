@@ -48,7 +48,6 @@ def start():
     session['historial_global'] = []
     session.modified = True
 
-    # Nombre bonito si viene del botón, si no, pone el default
     if nombre_boton:
         nombre = nombre_boton
     else:
@@ -113,7 +112,7 @@ def guess():
     answer = None
     if correcta or len(historial) >= MAX_INTENTS:
         answer = f"{c['title']} - {c['artist']}"
-        # Registrar la jugada en el historial global
+
         historial_global = session.get('historial_global', [])
         historial_global.append({
             "titulo": c['title'],
@@ -122,7 +121,6 @@ def guess():
         })
         session['historial_global'] = historial_global
 
-        # Siguiente canción
         playlist_pos += 1
         # Si terminan las canciones, reshuffleamos (esto puede mejorarse si se quiere evitar repeticiones eternas)
         if playlist_pos >= len(playlist_indices):
@@ -147,6 +145,12 @@ def guess():
 @app.route("/historial-global")
 def historial_global():
     return jsonify(session.get('historial_global', []))
+
+@app.route("/reset", methods=["POST"])
+def reset():
+    session.clear()
+    return '', 204
+
 
 if __name__ == "__main__":
     app.run()

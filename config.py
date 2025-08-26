@@ -1,2 +1,7 @@
+"""
+Archivo de configuración de seguridad y constantes globales.
+"""
+
 class Security:
-    SECRET_KEY = "bocajuniorsquerido2000"
+    #: Clave secreta usada por Flask para firmar cookies de sesión.
+    SECRET_KEY: str = "bocajuniorsquerido2000"

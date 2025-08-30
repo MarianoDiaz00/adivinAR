@@ -204,9 +204,9 @@ document.addEventListener("DOMContentLoaded", () => {
   btnGuess.addEventListener("click", () => {
     if (!canInteract) return;
     const guess = (guessInput.value || "").trim();
-    if (!guess) { animarInputError(); return; }
+    if (!guess) animarInputError();
 
-    canInteract = false;
+    canInteract = true;
     btnGuess.disabled = true;
 
     fetch("/guess", {

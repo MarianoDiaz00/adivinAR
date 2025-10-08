@@ -1,7 +1,3 @@
-"""
-Lógica del juego: normalización de entradas y validación de respuestas.
-"""
-
 import unicodedata
 from typing import Dict
 

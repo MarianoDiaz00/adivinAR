@@ -1,8 +1,3 @@
-"""
-Funciones auxiliares para interactuar con la API de Deezer
-y para procesar entradas de playlist.
-"""
-
 import requests
 import re
 from typing import List, Dict, Optional

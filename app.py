@@ -1,28 +1,31 @@
-"""
-Aplicación principal de Flask para el juego de adivinar la canción.
-"""
-
 from flask import Flask, session, request, jsonify, render_template
 import config, random
 from juego import GameSession
 from utilidades import playlist_deezer, extraer_id_playlist
 
-
 # --- Configuración de la app ---
 app = Flask(__name__)
 app.secret_key = config.Security.SECRET_KEY
 
-# Playlist por defecto y límite de intentos
-PLAYLIST_ID_DEFECTO = "14072713181"
+# Límite de intentos
 MAX_INTENTOS = 5
 
-# Playlists disponibles en la interfaz
-PLAYLISTS = [
-    {"id": "14072713181", "name": "Predeterminada"},
-    {"id": "14089683421", "name": "Rock Internacional"},
-    {"id": "14094110361", "name": "Música Variedad Inglés"},
-    {"id": "14094507901", "name": "Música Variedad Español"},
+# =======================
+#  Playlists predefinidas
+# =======================
+# Editá esta lista para cambiar las playlists ofrecidas.
+# id: ID (o link) de la playlist en Deezer
+# nombre: cómo se mostrará al usuario
+# genero: etiqueta informativa (opcional)
+PLAYLISTS_PREDEFINIDAS = [
+    {"id": "14395627421", "nombre": "Rock Nacional",           "genero": "Rock"},
+    {"id": "14395627661", "nombre": "Rock Internacional",      "genero": "Rock"},
+    {"id": "14094110361", "nombre": "Variedad Inglés",         "genero": "Mix EN"},
+    {"id": "14094507901", "nombre": "Variedad Español",        "genero": "Mix ES"},
 ]
+
+# Playlist por defecto (usada si el usuario no envía ninguna)
+PLAYLIST_ID_DEFECTO = PLAYLISTS_PREDEFINIDAS[0]["id"]
 
 
 # --- Funciones auxiliares ---
@@ -46,11 +49,28 @@ def nueva_lista_canciones(playlist_id: str):
     return indices, canciones
 
 
+def nombre_playlist_desde_id(pid: str) -> str:
+    """Devuelve el nombre de la playlist si está en las predefinidas; si no, 'Playlist {id}'."""
+    for pl in PLAYLISTS_PREDEFINIDAS:
+        if str(pl["id"]) == str(pid):
+            return pl["nombre"]
+    return f"Playlist {pid}"
+
+
 # --- Rutas ---
 @app.route("/")
 def index():
-    """Página principal con selección de playlists."""
-    return render_template("index.html", playlists=PLAYLISTS)
+    """Página principal. (Si querés poblar el select desde backend, se envían aquí también)."""
+    return render_template("index.html", playlists=PLAYLISTS_PREDEFINIDAS)
+
+
+@app.route("/api/playlists")
+def api_playlists():
+    """
+    Devuelve la lista de playlists predefinidas en JSON.
+    Útil para poblar el <select> del frontend dinámicamente.
+    """
+    return jsonify(PLAYLISTS_PREDEFINIDAS)
 
 
 @app.route("/start", methods=["POST"])
@@ -61,11 +81,11 @@ def start():
     """
     data = request.get_json(force=True)
     entrada = data.get("playlist_id") or None
-    nombre_boton = data.get("playlist_name")
+    nombre_boton = data.get("playlist_name")  # opcional (si lo mandás desde el front)
 
+    # Si el usuario pegó un link, extraemos el ID; si no manda nada, usamos la default
     playlist_id = extraer_id_playlist(entrada) if entrada else PLAYLIST_ID_DEFECTO
     canciones = playlist_deezer(playlist_id)
-
     if not canciones:
         return jsonify({"error": "No se pudo obtener la playlist de Deezer"}), 400
 
@@ -79,7 +99,9 @@ def start():
     })
     session.modified = True
 
-    nombre = nombre_boton or f"Playlist {playlist_id}"
+    # Elegimos nombre de la playlist:
+    # prioridad a nombre_boton (si viene del front), luego buscamos en las predefinidas, si no armamos genérico
+    nombre = nombre_boton or nombre_playlist_desde_id(playlist_id)
     return jsonify({"message": "Juego iniciado", "playlist_name": nombre})
 
 
@@ -141,15 +163,15 @@ def guess():
     idx = playlist_indices[playlist_pos]
     cancion = canciones[idx]
     game = GameSession(cancion)
-    correcta = game.check_guess(guess_txt)
+    correcto = game.check_guess(guess_txt)
 
     # Historial de intentos actuales
     historial = session.get('historial', [])
-    historial.append({"guess": guess_txt, "correcta": correcta})
+    historial.append({"guess": guess_txt, "correcta": correcto})
     session['historial'] = historial
 
     answer = None
-    if correcta or len(historial) >= MAX_INTENTOS:
+    if correcto or len(historial) >= MAX_INTENTOS:
         # Respuesta correcta o fin de intentos
         answer = f"{cancion['title']} - {cancion['artist']}"
 
@@ -158,7 +180,7 @@ def guess():
         historial_global.append({
             "titulo": cancion['title'],
             "artista": cancion['artist'],
-            "correcta": correcta
+            "correcta": correcto
         })
         session['historial_global'] = historial_global
 
@@ -175,7 +197,7 @@ def guess():
     session.modified = True
 
     return jsonify({
-        "correcto": correcta,
+        "correcto": correcto,
         "answer": answer,
         "preview_url": cancion['preview_url'],
         "intentos_restantes": max(0, MAX_INTENTOS - len(historial)),

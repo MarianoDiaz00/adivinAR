@@ -1,20 +1,24 @@
-/* ======================================================
-   Juego "Adivina la Canción" — FRONTEND ROBUSTO
-   - Espera DOMContentLoaded
-   - Valida existencias de IDs
-   - Maneja errores de fetch con mensaje del backend
-   - Fallbacks para habilitar botón de audio
-====================================================== */
-
 document.addEventListener("DOMContentLoaded", () => {
-  /** Helper para obtener elementos por ID y avisar si faltan. */
+  // --- Estado (primero, para evitar TDZ) ---
+  const FRAGMENT_DURATIONS = [0.5, 1, 2, 4, 6];
+  const MAX_INTENTS = 5;
+  let currentAttempt = 0;
+  let roundHistory = [];
+  let canInteract = true;
+  let audioTimeout = null;
+
+  // Control de versión de pista/hint para evitar carreras
+  let hintReqSeq = 0;
+  let currentPreviewUrl = null;
+
+  // Helper
   const $ = (id, optional = false) => {
     const el = document.getElementById(id);
     if (!el && !optional) console.error(`❌ Falta #${id} en el HTML`);
     return el;
   };
 
-  // --------- Referencias del DOM (ajusta los IDs si hace falta) ----------
+  // DOM
   const btnStartPlaylist  = $("start-with-playlist", true);
   const btnStartDefault   = $("start-default", true);
   const btnPlayFragment   = $("play-fragment");
@@ -23,50 +27,71 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnVolverPlaylist = $("btn-volver-playlist", true);
   const toggleDarkBtn     = $("toggle-dark", true);
 
-  const audioEl         = $("audio-player");
-  const hintText        = $("hint-text");
-  const attemptsBox     = $("attempt-boxes");
-  const attemptsRemain  = $("attempts-remaining");
-  const resultMsg       = $("result-message");
-  const historialEl     = $("historial");
-  const guessInput      = $("guess-input");
-  const autoList        = $("autocomplete-list", true); // puede faltar si no usás <datalist>
-  const solvedListEl    = $("solved-songs");
+  const audioEl        = $("audio-player");
+  const hintText       = $("hint-text");
+  const attemptsBox    = $("attempt-boxes");
+  const attemptsRemain = $("attempts-remaining");
+  const resultMsg      = $("result-message");
+  const historialEl    = $("historial");
+  const guessInput     = $("guess-input");
+  const autoList       = $("autocomplete-list", true);
+  const solvedListEl   = $("solved-songs", true);
 
-  const screenSelect    = $("playlist-select-screen", true); // puede que tu landing no tenga esto
-  const screenGame      = $("juego-main");
-  const playlistInfo    = $("playlist-info", true);
-  const playlistInput   = $("playlist-input", true);
+  const screenSelect   = $("playlist-select-screen", true);
+  const screenGame     = $("juego-main");
+  const playlistInfo   = $("playlist-info", true);
+  const playlistInput  = $("playlist-input", true);
 
-  // Si hay IDs críticos ausentes, abortamos para que el error sea claro.
-  const criticalMissing = [btnPlayFragment, btnGuess, btnNext, audioEl, hintText, attemptsBox, attemptsRemain, resultMsg, historialEl, guessInput, solvedListEl, screenGame].some(el => !el);
+  const predefButtons  = document.getElementById("predef-buttons");
+
+  // Carga de playlists (una sola vez)
+  if (predefButtons) {
+    fetch("/api/playlists")
+      .then(r => r.json())
+      .then(list => {
+        predefButtons.innerHTML = "";
+        (list || []).forEach(pl => {
+          const btn = document.createElement("button");
+          btn.className = "btn playlist-btn";
+          btn.textContent = pl.nombre;
+          btn.dataset.playlistId = pl.id;
+          btn.addEventListener("click", () => startGame(pl.id, pl.nombre));
+          predefButtons.appendChild(btn);
+        });
+      })
+      .catch(err => {
+        console.error("No se pudieron cargar las playlists:", err);
+        predefButtons.innerHTML =
+          "<p style='color:var(--ink-muted)'>No se pudieron cargar las playlists.</p>";
+      });
+  }
+
+  // Chequeo mínimo
+  const criticalMissing = [
+    btnPlayFragment, btnGuess, btnNext, audioEl, hintText, attemptsBox,
+    attemptsRemain, resultMsg, historialEl, guessInput, screenGame
+  ].some(el => !el);
   if (criticalMissing) {
-    console.error("🚫 No puedo iniciar la UI porque faltan elementos críticos en el DOM (ver errores arriba).");
+    console.error("🚫 Faltan elementos críticos en el DOM.");
     return;
   }
 
-  // --------- Estado ----------
-  const FRAGMENT_DURATIONS = [0.5, 1, 2, 4, 6];
-  const MAX_INTENTS = 5;
-  let currentAttempt = 0;
-  let roundHistory = [];
-  let canInteract = true;
-  let audioTimeout = null;
-
   // Estado inicial
   btnPlayFragment.disabled = true;
-  if (screenSelect) screenSelect.style.display = ""; // según tu HTML
+  if (screenSelect) screenSelect.style.display = "";
   screenGame.style.display = "none";
 
-  // --------- Listeners de inicio ----------
+  // Landing
   if (btnStartPlaylist && playlistInput) {
-    btnStartPlaylist.addEventListener("click", () => startGame(playlistInput.value.trim() || null));
+    btnStartPlaylist.addEventListener("click", () =>
+      startGame((playlistInput.value || "").trim() || null)
+    );
   }
   if (btnStartDefault) {
     btnStartDefault.addEventListener("click", () => startGame(null));
   }
 
-  // Volver (si existe)
+  // Volver
   if (btnVolverPlaylist && screenSelect) {
     btnVolverPlaylist.addEventListener("click", () => {
       screenGame.style.display = "none";
@@ -76,25 +101,24 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Toggle tema (si existe)
+  // Tema
   if (toggleDarkBtn) {
     toggleDarkBtn.addEventListener("click", () => {
       const next = document.body.getAttribute("data-theme") === "dark" ? "light" : "dark";
       document.body.setAttribute("data-theme", next);
-      localStorage.setItem("theme", next);
+      try { localStorage.setItem("theme", next); } catch {}
     });
-    // tema inicial
-    const pref = localStorage.getItem("theme");
-    if (pref) document.body.setAttribute("data-theme", pref);
-    else if (window.matchMedia("(prefers-color-scheme: dark)").matches)
-      document.body.setAttribute("data-theme", "dark");
-    else document.body.setAttribute("data-theme", "light");
+    try {
+      const pref = localStorage.getItem("theme");
+      if (pref) document.body.setAttribute("data-theme", pref);
+      else if (matchMedia && matchMedia("(prefers-color-scheme: dark)").matches)
+        document.body.setAttribute("data-theme", "dark");
+      else document.body.setAttribute("data-theme", "light");
+    } catch {}
   }
 
-  // --------- Core ---------
-
+  // Core
   function startGame(playlist_id, playlist_name = null) {
-    // Deshabilito botones de landing si existen
     lockLanding(true);
 
     fetch("/start", {
@@ -102,7 +126,7 @@ document.addEventListener("DOMContentLoaded", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ playlist_id, playlist_name })
     })
-      .then(ensureJSON)   // <- si viene 400, lanza con el mensaje del backend
+      .then(ensureJSON)
       .then(data => {
         if (screenSelect) screenSelect.style.display = "none";
         screenGame.style.display = "block";
@@ -120,19 +144,21 @@ document.addEventListener("DOMContentLoaded", () => {
   function lockLanding(lock) {
     if (btnStartPlaylist) btnStartPlaylist.disabled = lock;
     if (btnStartDefault)  btnStartDefault.disabled  = lock;
+    if (predefButtons)    predefButtons.querySelectorAll("button").forEach(b => b.disabled = lock);
   }
 
   function iniciarRonda() {
     currentAttempt = 0;
     roundHistory = [];
     canInteract = true;
-    clearAudio();
+    clearAudio(true);                 // ← reset duro: sin src
 
     setResult("");
     setHint("¡Escuchá el fragmento y adiviná la canción!");
     historialEl.innerHTML = "";
     btnNext.style.display = "none";
     guessInput.value = "";
+
     btnPlayFragment.disabled = true;
     btnGuess.disabled = false;
 
@@ -142,10 +168,21 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function cargarHint() {
+    // nueva petición → invalidamos previas y bloqueamos reproducción
+    const req = ++hintReqSeq;
+    currentPreviewUrl = null;
     btnPlayFragment.disabled = true;
-    fetch(`/hint?attempt=${currentAttempt + 1}`)
+
+    // aseguramos que no haya audio listo de otra canción
+    clearAudio(true);                 // ← remove src + load()
+
+    const safeAttempt = Number.isFinite(currentAttempt) ? currentAttempt : 0;
+
+    fetch(`/hint?attempt=${safeAttempt + 1}`)
       .then(ensureJSON)
       .then(data => {
+        if (req !== hintReqSeq) return;  // llegó tarde, ignoramos
+
         if (data.error) {
           setHint(data.error);
           return;
@@ -159,22 +196,25 @@ document.addEventListener("DOMContentLoaded", () => {
         actualizarAutocomplete(data.canciones_posibles || []);
 
         if (data.preview_url) {
-          audioEl.src = data.preview_url;
-          // Cargar y habilitar el botón con varios triggers (algunos navegadores no disparan todos)
+          currentPreviewUrl = data.preview_url;
+          audioEl.src = currentPreviewUrl;
           audioEl.load();
-          const enable = () => { btnPlayFragment.disabled = false; cleanup(); };
-          const cleanup = () => {
-            audioEl.oncanplay = null;
-            audioEl.onloadeddata = null;
-            audioEl.onloadedmetadata = null;
+
+          const enableIfMatch = () => {
+            // Habilitamos sólo si no hubo otra petición posterior
+            if (req === hintReqSeq && currentPreviewUrl && audioEl.src.includes(currentPreviewUrl)) {
+              btnPlayFragment.disabled = false;
+            }
+            audioEl.oncanplay = audioEl.onloadeddata = audioEl.onloadedmetadata = null;
           };
-          audioEl.oncanplay = enable;
-          audioEl.onloadeddata = enable;
-          audioEl.onloadedmetadata = enable;
-          // Fallback inmediato si ya está listo
-          if (audioEl.readyState >= 2) btnPlayFragment.disabled = false;
+          audioEl.oncanplay = enableIfMatch;
+          audioEl.onloadeddata = enableIfMatch;
+          audioEl.onloadedmetadata = enableIfMatch;
+
+          // (Importante) NO usar fallback con readyState aquí: podría habilitar con audio viejo
         } else {
-          // sin preview => no se puede reproducir
+          // No hay preview disponible
+          currentPreviewUrl = null;
           btnPlayFragment.disabled = true;
         }
       })
@@ -186,27 +226,31 @@ document.addEventListener("DOMContentLoaded", () => {
 
   btnPlayFragment.addEventListener("click", () => {
     if (!canInteract || currentAttempt >= MAX_INTENTS) return;
-    if (!audioEl.src) { animarInputError(); return; }
+    if (!currentPreviewUrl || !audioEl.src.includes(currentPreviewUrl)) {
+      // Si aún no tenemos la url actual, no reproducimos y pedimos la pista
+      setHint("Preparando fragmento…");
+      cargarHint();
+      return;
+    }
 
-    clearAudio();
+    clearAudio(); // pausa/limpia timers, mantiene src actual
     audioEl.currentTime = 0;
     audioEl.volume = 0.7;
     audioEl.play().catch(() => {
-      // algunos navegadores piden interacción adicional
       alert("Tu navegador bloqueó la reproducción automática. Volvé a intentar.");
     });
-    audioTimeout = window.setTimeout(() => {
+    audioTimeout = setTimeout(() => {
       audioEl.pause();
       audioEl.currentTime = 0;
     }, (FRAGMENT_DURATIONS[currentAttempt] || 1) * 1000);
   });
 
+  // ===== Permitir envíos vacíos y corregir bug de variable 'guess' =====
   btnGuess.addEventListener("click", () => {
     if (!canInteract) return;
-    const guess = (guessInput.value || "").trim();
-    if (!guess) animarInputError();
 
-    canInteract = true;
+    const guess = (guessInput.value ?? "");   // puede ser vacío
+    canInteract = false;     // evita doble click
     btnGuess.disabled = true;
 
     fetch("/guess", {
@@ -216,13 +260,16 @@ document.addEventListener("DOMContentLoaded", () => {
     })
       .then(ensureJSON)
       .then(data => {
-        canInteract = true;
-        guessInput.value = "";
+        const attemptsFromSrv = (data.jugadas || []).length;
         roundHistory = data.jugadas || [];
-        currentAttempt = roundHistory.length;
+        currentAttempt = attemptsFromSrv;
+
+        guessInput.value = "";
 
         if (data.correcto) {
-          if (window.confetti) window.confetti({ particleCount: 80, spread: 70, origin: { y: 0.5 } });
+          if (attemptsFromSrv === 1 && window.confetti) {
+            window.confetti({ particleCount: 80, spread: 70, origin: { y: 0.5 } });
+          }
           setResult("¡Correcto! Era: " + data.answer, true);
           btnNext.style.display = "block";
           playFullPreview(data.preview_url);
@@ -233,7 +280,6 @@ document.addEventListener("DOMContentLoaded", () => {
           playFullPreview(data.preview_url);
           actualizarHistorialGlobal();
         } else {
-          animarInputError();
           setResult("Incorrecto", false);
           cargarHint();
           btnGuess.disabled = false;
@@ -243,16 +289,23 @@ document.addEventListener("DOMContentLoaded", () => {
         mostrarHistorial();
       })
       .catch(err => {
-        canInteract = true;
-        btnGuess.disabled = false;
         console.error(err);
         setResult(`Ocurrió un error. ${err.message || ""}`, false);
+        btnGuess.disabled = false;
+      })
+      .finally(() => {
+        canInteract = true;
       });
+  });
+
+  // Permitir Enter incluso vacío
+  guessInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") btnGuess.click();
   });
 
   btnNext.addEventListener("click", iniciarRonda);
 
-  // --------- UI helpers ---------
+  // Helpers UI
   function actualizarIntentos() {
     attemptsBox.innerHTML = "";
     for (let i = 0; i < MAX_INTENTS; i++) {
@@ -263,7 +316,8 @@ document.addEventListener("DOMContentLoaded", () => {
       span.className = "attempt-square " + estado;
       attemptsBox.appendChild(span);
     }
-    attemptsRemain.innerHTML = `<b>${Math.max(0, MAX_INTENTS - currentAttempt)}</b> intentos restantes`;
+    attemptsRemain.innerHTML =
+      `<b>${Math.max(0, MAX_INTENTS - currentAttempt)}</b> intentos restantes`;
   }
 
   function setHint(msg) { hintText.innerHTML = msg || ""; }
@@ -289,22 +343,34 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function actualizarHistorialGlobal() {
+    const wrongEl   = document.getElementById("solved-wrong");
+    const correctEl = document.getElementById("solved-correct");
+    const singleEl  = solvedListEl || null;
+
     fetch("/historial-global")
       .then(ensureJSON)
       .then(historial => {
-        solvedListEl.innerHTML = "";
+        if (wrongEl)   wrongEl.innerHTML = "";
+        if (correctEl) correctEl.innerHTML = "";
+        if (singleEl)  singleEl.innerHTML = "";
+
         (historial || []).forEach(item => {
           const li = document.createElement("li");
           li.textContent = `${item.titulo} — ${item.artista}`;
-          li.style.color = item.correcta ? "var(--success)" : "var(--danger)";
-          solvedListEl.appendChild(li);
+          if (item.correcta) {
+            if (correctEl) correctEl.appendChild(li);
+            else if (singleEl) { li.style.color = "var(--success)"; singleEl.appendChild(li); }
+          } else {
+            if (wrongEl) wrongEl.appendChild(li);
+            else if (singleEl) { li.style.color = "var(--danger)"; singleEl.appendChild(li); }
+          }
         });
       })
-      .catch(err => console.error(err));
+      .catch(err => console.error("Error actualizando historial:", err));
   }
 
   function actualizarAutocomplete(list) {
-    if (!autoList) return; // si no usás datalist, salimos
+    if (!autoList) return;
     autoList.innerHTML = "";
     (list || []).forEach(c => {
       if (!c || c.includes("undefined")) return;
@@ -316,15 +382,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function playFullPreview(url) {
     if (!url) return;
+    // reproducimos preview completa, no interfiere con fragmento
     audioEl.src = url;
     audioEl.play().catch(() => {});
   }
 
-  function clearAudio() {
-    if (audioTimeout) window.clearTimeout(audioTimeout);
+  function clearAudio(resetSrc = false) {
+    if (audioTimeout) clearTimeout(audioTimeout);
     audioTimeout = null;
-    audioEl.pause();
-    audioEl.currentTime = 0;
+    try { audioEl.pause(); } catch {}
+    try { audioEl.currentTime = 0; } catch {}
+    if (resetSrc) {
+      try { audioEl.removeAttribute("src"); } catch {}
+      try { audioEl.load(); } catch {}
+    }
   }
 
   function animarInputError() {
@@ -344,12 +415,21 @@ document.addEventListener("DOMContentLoaded", () => {
     return resp.json();
   }
 
-  // --------- Delegación para botones .playlist-btn (si existen) ---------
-  document.querySelectorAll(".playlist-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const playlistId = btn.getAttribute("data-playlist-id");
-      const playlistName = btn.textContent;
-      startGame(playlistId || null, playlistName || null);
-    });
+  // Delegación defensiva por si JS crea botones luego
+  document.addEventListener("click", e => {
+    const btn = e.target.closest(".playlist-btn");
+    if (!btn) return;
+    const playlistId = btn.getAttribute("data-playlist-id");
+    const playlistName = btn.textContent;
+    startGame(playlistId || null, playlistName || null);
   });
+
+  function limpiarUI() {
+    setResult("");
+    setHint("");
+    historialEl.innerHTML = "";
+    attemptsBox.innerHTML = "";
+    attemptsRemain.textContent = "";
+    clearAudio(true);
+  }
 });

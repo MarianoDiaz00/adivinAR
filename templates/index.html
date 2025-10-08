@@ -4,71 +4,119 @@
   <meta charset="UTF-8">
   <title>AdivinAR</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link href="https://fonts.googleapis.com/css2?family=Inte:wght@400;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet">
+  <!-- Corrección de fuente: Inter (antes estaba mal escrito como "Inte") -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
+
+<!-- El CSS nuevo usa body[data-theme="light|dark"]. Arrancamos en dark. -->
 <body data-theme="dark">
-  <div class="landing-box" id="playlist-select-screen">
-      <div class="landing-logo">
-        <span class="icon">🎵</span>
+  <!-- ===================== LANDING / SELECCIÓN ====================== -->
+  <section class="landing" id="playlist-select-screen">
+      <div class="landing-head">
+        <div class="brand">
+          <span class="logo" aria-hidden="true">🎵</span>
+          AdivinAR <span class="sub" style="font-weight:700;opacity:.7">AR</span>
+        </div>
+        <button id="toggle-dark-top" class="theme-toggle" type="button" title="Cambiar tema">🌓</button>
+      </div>
+
+      <div class="landing-stack">
+        <input id="playlist-input" class="input" placeholder="Enlace o ID de Playlist Deezer" aria-label="Enlace o ID de Playlist Deezer">
+        <button id="start-with-playlist" class="btn btn-primary" type="button">Jugar con mi Playlist</button>
+
+        <!-- Botones de playlists predefinidas (se llenan por JS con /api/playlists) -->
+        <div id="predef-buttons" class="playlist-grid">
+          <!-- JS debe crear botones con class="btn btn-secondary playlist-btn" data-playlist-id="..." -->
+        </div>
+      </div>
+    </section>
+
+
+  <!-- ============================ JUEGO ============================== -->
+  <section class="container" id="juego-main" style="display:none;">
+    <div class="top-bar">
+      <button id="btn-volver-playlist" class="btn btn-secondary" type="button" title="Volver a la selección">⬅</button>
+
+      <div class="brand" aria-label="AdivinAR">
+        <span class="logo" aria-hidden="true">🎵</span>
         AdivinAR
       </div>
-      <input id="playlist-input" class="landing-input" placeholder="Enlace o ID de Playlist Deezer">
-      <div class="all-playlist-buttons">
-        <button id="start-with-playlist" class="landing-btn">Jugar con mi Playlist</button>
-        <button id="start-default" class="landing-btn">Rock en Español</button>
-        {% for pl in playlists if pl.name != "Predeterminada" %}
-          <button class="landing-btn playlist-btn" data-playlist-id="{{ pl.id }}">{{ pl.name }}</button>
-        {% endfor %}
-      </div>
-    </div>
-  <div class="container" id="juego-main" style="display:none;">
-    <div class="top-bar">
-        <button id="btn-volver-playlist" class="btn volver-btn">⬅</button>
-        <div class="top-bar-title">
-            <span class="icon">🎵</span> AdivinAR
-        </div>
-        <button id="toggle-dark" class="dark-btn" title="Cambiar tema">🌙</button>
-    </div>
-    <p id="playlist-info" class="playlist-id"></p>
-    <div class="attempt-boxes" id="attempt-boxes"></div>
-    <p id="hint-text" class="hint"></p>
 
+      <button id="toggle-dark" class="theme-toggle" type="button" title="Cambiar tema">🌓</button>
+    </div>
+
+    <p id="playlist-info" class="subtitle"></p>
+
+    <div class="attempt-boxes" id="attempt-boxes" aria-label="Intentos"></div>
+
+    <!-- Pista / hint -->
+    <p id="hint-text" class="hint-box" aria-live="polite"></p>
+
+    <!-- Reproductor -->
     <audio id="audio-player" style="display:none" preload="auto" crossorigin="anonymous"></audio>
-    <button id="play-fragment" class="btn" aria-label="Escuchar fragmento de la canción">
-      <span aria-hidden="true">🔊</span> Escuchar Fragmento
-    </button>
+    <div class="actions-row">
+      <button id="play-fragment" class="btn" type="button" aria-label="Escuchar fragmento de la canción">
+        🔊 Escuchar Fragmento
+      </button>
+    </div>
 
-    <div class="guess-area">
+    <!-- Respuesta -->
+    <div class="guess-row mt-12">
       <input id="guess-input" class="input" list="autocomplete-list" placeholder="¿Qué canción es?" aria-label="Escribir nombre de la canción">
       <datalist id="autocomplete-list"></datalist>
-      <button id="guess-btn" class="btn" aria-label="Adivinar canción">Adivinar</button>
+      <button id="guess-btn" class="btn" type="button" aria-label="Adivinar canción">Adivinar</button>
     </div>
 
-    <button id="reset-btn" class="btn center-btn" style="display:none;margin-top:14px;">
-      Siguiente Canción
-    </button>
+    <div class="actions-row">
+      <button id="reset-btn" class="btn" type="button" style="display:none;">Siguiente Canción</button>
+    </div>
 
-    <p id="result-message"></p>
+    <p id="result-message" class="mt-8"></p>
     <p id="attempts-remaining"></p>
 
-    <div id="historial" class="historial"></div>
+    <!-- Historial de la ronda -->
+    <div id="historial" class="historial mt-12"></div>
 
-    <ul id="solved-songs" class="solved-list"></ul>
-  </div>
+    <!-- NUEVA disposición de resultados: IZQ no acertadas / DER acertadas -->
+    <div class="results-wrap mt-16">
+      <div class="results-col">
+        <h3>No acertadas</h3>
+        <ul id="solved-wrong" class="results-list wrong" aria-live="polite"></ul>
+      </div>
+      <div class="results-col">
+        <h3>Acertadas</h3>
+        <ul id="solved-correct" class="results-list correct" aria-live="polite"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- Confetti lib -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+  <!-- Toggle de tema: el CSS usa body[data-theme="..."] -->
   <script>
-    document.getElementById("toggle-dark").addEventListener("click", function() {
-      const root = document.documentElement;
-      if (root.getAttribute("data-theme") === "light") {
-          root.setAttribute("data-theme", "dark");
-          this.innerText = "🌙";
-      } else {
-          root.setAttribute("data-theme", "light");
-          this.innerText = "🌗";
-      }
-    });
+    const applyTheme = (elBtn) => {
+      const current = document.body.getAttribute('data-theme') || 'dark';
+      const next = current === 'light' ? 'dark' : 'light';
+      document.body.setAttribute('data-theme', next);
+      try { localStorage.setItem('theme', next); } catch(e){}
+      if (elBtn) elBtn.textContent = '🌓';
+    };
+
+    // Botón en top bar del juego
+    document.getElementById('toggle-dark')?.addEventListener('click', function(){ applyTheme(this); });
+    // Botón en la landing
+    document.getElementById('toggle-dark-top')?.addEventListener('click', function(){ applyTheme(this); });
+
+    // Preferencia guardada
+    (function initTheme(){
+      try {
+        const saved = localStorage.getItem('theme');
+        if (saved) document.body.setAttribute('data-theme', saved);
+      } catch(e){}
+    })();
   </script>
 </body>
 </html>

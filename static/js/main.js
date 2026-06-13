@@ -1,5 +1,4 @@
 document.addEventListener("DOMContentLoaded", () => {
-  // --- Estado (primero, para evitar TDZ) ---
   const FRAGMENT_DURATIONS = [0.5, 1, 2, 4, 6];
   const MAX_INTENTS = 5;
   let currentAttempt = 0;
@@ -11,127 +10,12 @@ document.addEventListener("DOMContentLoaded", () => {
   let hintReqSeq = 0;
   let currentPreviewUrl = null;
 
-  // Artista y candidatos para detectar "parcial"
-  let currentArtist = null;            // artista principal de la ronda
-  let candidateArtists = new Set();    // artistas derivados de canciones_posibles
-
-  // Cache de parciales por intento (clave = guess normalizado)
-  let partialByGuess = new Map();
-
   // Helper
   const $ = (id, optional = false) => {
     const el = document.getElementById(id);
     if (!el && !optional) console.error(`❌ Falta #${id} en el HTML`);
     return el;
   };
-
-  // ─── Helpers de normalización / artista / parcial ──────────────────────────
-  const normalize = s => (s || "")
-    .toString()
-    .normalize("NFD").replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-
-  // Soporta -, – y — como separador entre título y artista
-  function splitTitleArtist(str){
-    if (!str) return [String(str), null];
-    const s = String(str);
-    const m = s.match(/^(.*?)[\s]*[-–—][\s]*(.+)$/);
-    if (m) return [m[1].trim(), m[2].trim()];
-    return [s, null];
-  }
-
-  const extractArtistFromAnswer = ans => {
-    const [, artist] = splitTitleArtist(ans);
-    return artist || null;
-  };
-
-  const extractArtistFromGuess = g => {
-    const [, artist] = splitTitleArtist(g || "");
-    return artist || "";
-  };
-
-  const artistMatches = (guess, artist) => {
-    const g = normalize(guess);
-    const a = normalize(artist);
-    if (!a) return false;
-    return g.includes(a) || normalize(extractArtistFromGuess(guess)) === a;
-  };
-
-  // De un array de strings ("Titulo - Artista" / "Artista - Titulo"), saca posibles artistas
-  const extractArtistsFromCandidates = (list = []) => {
-    const out = new Set();
-    (list || []).forEach(str => {
-      if (!str) return;
-      const [left, right] = splitTitleArtist(String(str));
-      if (left)  out.add(left);
-      if (right) out.add(right);
-    });
-    return out;
-  };
-
-  // Detecta "acierto parcial" aunque el flag venga con otro nombre o anidado
-  function isPartialDeep(obj){
-    const seen = new Set();
-    const rec = (o) => {
-      if (!o || typeof o !== "object" || seen.has(o)) return false;
-      seen.add(o);
-      for (const [k, v] of Object.entries(o)){
-        const key = String(k).toLowerCase();
-        if (typeof v === "boolean" && v && /(artist|artista|banda|band|group)/.test(key)) return true;
-        if (typeof v === "string"  && /(partial|parcial|artist|artista|banda)/.test(v.toLowerCase())) return true;
-        if (typeof v === "object" && rec(v)) return true;
-      }
-      return false;
-    };
-    return rec(obj);
-  }
-
-  // Obtiene el artista "conocido" en este momento (estado, payload, pista o UI)
-  function getKnownArtist(data, fallbackAnswer) {
-    if (currentArtist) return currentArtist;                     // estado guardado
-    const fromData = data?.artista || data?.artist;              // payload API
-    if (fromData) return fromData;
-    const fromAns = extractArtistFromAnswer(fallbackAnswer || data?.answer); // "Canción - Artista"
-    if (fromAns) return fromAns;
-    // parseo del hint visible (como último recurso)
-    const visible = (hintText?.innerText || hintText?.textContent || "").trim();
-    if (visible) {
-      const m = /(?:Artista|Artist|Banda)\s*:?\s*([^\n\r]+)/i.exec(visible);
-      if (m && m[1]) return m[1].trim();
-    }
-    return null;
-  }
-
-  // Marca un intento como parcial y lo cachea por guess normalizado
-  function markPartial(at){
-    if (!at || at.correcta) return;
-    at.parcial = true;
-    if (at.guess) partialByGuess.set(normalize(at.guess), true);
-  }
-
-  // Reaplica parciales a una historia (cache + heurística por artista conocido)
-  function applyPartialFlagsTo(history, knownArtist, data){
-    if (!Array.isArray(history)) return;
-    history.forEach(at => {
-      if (!at || at.correcta) return;
-      if (at.parcial) { // ya marcado
-        partialByGuess.set(normalize(at.guess || ""), true);
-        return;
-      }
-      const inCache = partialByGuess.get(normalize(at.guess || ""));
-      if (inCache) { markPartial(at); return; }
-      if (isPartialDeep(at) || isPartialDeep(data)) { markPartial(at); return; }
-      if (knownArtist && artistMatches(at.guess, knownArtist)) { markPartial(at); return; }
-      // candidatos del autocomplete
-      if (candidateArtists && candidateArtists.size) {
-        for (const cand of candidateArtists) {
-          if (artistMatches(at.guess, cand)) { markPartial(at); break; }
-        }
-      }
-    });
-  }
 
   // DOM
   const btnStartPlaylist  = $("start-with-playlist", true);
@@ -266,12 +150,7 @@ document.addEventListener("DOMContentLoaded", () => {
     currentAttempt = 0;
     roundHistory = [];
     canInteract = true;
-    clearAudio(true);                 // reset duro: sin src
-
-    // reset artista/candidatos/cache
-    currentArtist = null;
-    candidateArtists = new Set();
-    partialByGuess = new Map();
+    clearAudio(true); // reset duro: sin src
 
     setResult("");
     setHint("¡Escuchá el fragmento y adiviná la canción!");
@@ -291,38 +170,22 @@ document.addEventListener("DOMContentLoaded", () => {
     const req = ++hintReqSeq;
     currentPreviewUrl = null;
     btnPlayFragment.disabled = true;
-
-    clearAudio(true); // remove src + load()
+    clearAudio(true);
 
     const safeAttempt = Number.isFinite(currentAttempt) ? currentAttempt : 0;
 
     fetch(`/hint?attempt=${safeAttempt + 1}`)
       .then(ensureJSON)
       .then(data => {
-        if (req !== hintReqSeq) return;  // llegó tarde, ignoramos
+        if (req !== hintReqSeq) return; // llegó tarde, ignoramos
 
-        if (data.error) {
-          setHint(data.error);
-          return;
-        }
+        if (data.error) { setHint(data.error); return; }
+
         if (data.pista && data.pista.trim() !== "") {
           setHint("💡 " + data.pista);
         } else {
           setHint("¡Escuchá el fragmento y adiviná la canción!");
         }
-
-        // Guardamos artista de la ronda (para detectar "parcial")
-        currentArtist = data.artista || data.artist || null;
-        if (!currentArtist && typeof data.pista === "string") {
-          const m = /(?:Artista|Artist|Banda)\s*:?\s*([^\n<]+)/i.exec(data.pista);
-          if (m && m[1]) currentArtist = m[1].trim();
-        }
-        if (!currentArtist && typeof data.answer === "string") {
-          currentArtist = extractArtistFromAnswer(data.answer);
-        }
-
-        // Derivamos artistas candidatos desde el autocomplete
-        candidateArtists = extractArtistsFromCandidates(data.canciones_posibles || []);
 
         actualizarAutocomplete(data.canciones_posibles || []);
 
@@ -371,12 +234,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }, (FRAGMENT_DURATIONS[currentAttempt] || 1) * 1000);
   });
 
-  // ===== Permitir envíos vacíos y marcar "parcial" si corresponde (por intento) =====
+  // Adivinar (permite envíos vacíos; el "parcial" lo decide el servidor)
   btnGuess.addEventListener("click", () => {
     if (!canInteract) return;
 
-    const guess = (guessInput.value ?? ""); // puede ser vacío
-    canInteract = false;     // evita doble click
+    const guess = (guessInput.value ?? "");
+    canInteract = false;
     btnGuess.disabled = true;
 
     fetch("/guess", {
@@ -386,50 +249,13 @@ document.addEventListener("DOMContentLoaded", () => {
     })
       .then(ensureJSON)
       .then(data => {
-        const attemptsFromSrv = (data.jugadas || []).length;
-
-        // Reemplaza historia por la del server
+        // El servidor es la fuente de verdad: cada jugada ya trae correcta y parcial.
         roundHistory = data.jugadas || [];
-        currentAttempt = attemptsFromSrv;
-
-        // Reaplicar parciales después del reemplazo (para no perderlos)
-        const knownArtistEarly = getKnownArtist(data, data?.answer);
-        applyPartialFlagsTo(roundHistory, knownArtistEarly, data);
-
-        // Si el servidor aún NO devuelve esta jugada, la agregamos para pintarla ahora
-        const lastFromSrv = roundHistory[roundHistory.length - 1];
-        const sameAsLast = lastFromSrv && normalize(lastFromSrv.guess) === normalize(guess);
-        if (!sameAsLast) {
-          roundHistory.push({ guess, correcta: !!data.correcto });
-          currentAttempt = roundHistory.length;
-        }
-
-        // Marcar PARCIAL SOLO en la última jugada (la actual), sin esperar fin de ronda
-        const last = roundHistory[roundHistory.length - 1];
-        if (last && !last.correcta) {
-          let partial = false;
-
-          // 1) Backend pudo marcarlo con otra clave/anidado
-          partial = partial || isPartialDeep(last) || isPartialDeep(data);
-
-          // 2) Por artista directo conocido (previamente derivado)
-          partial = partial || (knownArtistEarly && artistMatches(last.guess, knownArtistEarly));
-
-          // 3) Por artistas candidatos del autocomplete
-          if (!partial && candidateArtists.size) {
-            for (const cand of candidateArtists) {
-              if (artistMatches(last.guess, cand)) { partial = true; break; }
-            }
-          }
-
-          if (partial) markPartial(last);
-        }
+        currentAttempt = roundHistory.length;
 
         guessInput.value = "";
 
-        // En ramas finales, volver a reaplicar con artista de answer para no perder parciales
         if (data.correcto) {
-          applyPartialFlagsTo(roundHistory, getKnownArtist(data, data?.answer), data);
           if (currentAttempt === 1 && window.confetti) {
             window.confetti({ particleCount: 80, spread: 70, origin: { y: 0.5 } });
           }
@@ -438,13 +264,12 @@ document.addEventListener("DOMContentLoaded", () => {
           playFullPreview(data.preview_url);
           actualizarHistorialGlobal();
         } else if (data.answer) {
-          applyPartialFlagsTo(roundHistory, getKnownArtist(data, data?.answer), data);
           setResult("Fin del juego. Era: " + data.answer, false);
           btnNext.style.display = "block";
           playFullPreview(data.preview_url);
           actualizarHistorialGlobal();
         } else {
-          setResult("Incorrecto", false);
+          setResult(data.parcial ? "🟡 ¡Casi! Acertaste el artista" : "Incorrecto", false);
           cargarHint();
           btnGuess.disabled = false;
         }
@@ -473,10 +298,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function actualizarIntentos() {
     attemptsBox.innerHTML = "";
     for (let i = 0; i < MAX_INTENTS; i++) {
-      const estado = roundHistory[i]
-        ? (roundHistory[i].correcta
-            ? "correct"
-            : ((roundHistory[i].parcial || isPartialDeep(roundHistory[i])) ? "partial" : "wrong"))
+      const j = roundHistory[i];
+      const estado = j
+        ? (j.correcta ? "correct" : (j.parcial ? "partial" : "wrong"))
         : "empty";
       const span = document.createElement("span");
       span.className = "attempt-square " + estado;
@@ -505,13 +329,9 @@ document.addEventListener("DOMContentLoaded", () => {
       "<b>Jugadas ronda actual:</b><br>" +
       roundHistory.map((it, i) => {
         let emoji, clase;
-        if (it.correcta) {
-          emoji = "✅"; clase = "correct";
-        } else if (it.parcial || isPartialDeep(it)) {
-          emoji = "🟡"; clase = "partial";
-        } else {
-          emoji = "❌"; clase = "wrong";
-        }
+        if (it.correcta) { emoji = "✅"; clase = "correct"; }
+        else if (it.parcial) { emoji = "🟡"; clase = "partial"; }
+        else { emoji = "❌"; clase = "wrong"; }
         return `<span class="${clase}">${emoji} ${i + 1}: ${it.guess}</span>`;
       }).join("<br>");
   }
@@ -569,13 +389,6 @@ document.addEventListener("DOMContentLoaded", () => {
       try { audioEl.removeAttribute("src"); } catch {}
       try { audioEl.load(); } catch {}
     }
-  }
-
-  function animarInputError() {
-    guessInput.classList.remove("wrong-guess");
-    void guessInput.offsetWidth;
-    guessInput.classList.add("wrong-guess");
-    setTimeout(() => guessInput.classList.remove("wrong-guess"), 400);
   }
 
   function ensureJSON(resp) {

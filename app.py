@@ -1,223 +1,198 @@
+import random
+
 from flask import Flask, session, request, jsonify, render_template
-import config, random
+from flask_session import Session
+
+import config
 from juego import GameSession
-from utilidades import playlist_deezer, extraer_id_playlist
+from proveedores import DeezerProvider
 
 # --- Configuración de la app ---
 app = Flask(__name__)
 app.secret_key = config.Security.SECRET_KEY
 
-# Límite de intentos
-MAX_INTENTOS = 5
+# Sesión del lado del servidor (Flask-Session). Necesaria porque guardamos
+# la lista de canciones y el historial en la sesión, y eso no entra en la
+# cookie de ~4 KB que usa Flask por defecto.
+app.config.update(
+    SESSION_TYPE="filesystem",
+    SESSION_PERMANENT=False,
+)
+Session(app)
+
+MAX_INTENTOS = config.Juego.MAX_INTENTOS
+
+# === Proveedor de música ===
+# Para cambiar de servicio, se reemplaza SOLO esta línea por otra subclase
+# de ProveedorMusica (p. ej. ItunesProvider()).
+PROVEEDOR = DeezerProvider()
 
 # =======================
 #  Playlists predefinidas
 # =======================
-# Editá esta lista para cambiar las playlists ofrecidas.
-# id: ID (o link) de la playlist en Deezer
-# nombre: cómo se mostrará al usuario
-# genero: etiqueta informativa (opcional)
 PLAYLISTS_PREDEFINIDAS = [
-    {"id": "14395627421", "nombre": "Rock Nacional",           "genero": "Rock"},
-    {"id": "14395627661", "nombre": "Rock Internacional",      "genero": "Rock"},
-    {"id": "14094110361", "nombre": "Variedad Inglés",         "genero": "Mix EN"},
-    {"id": "14094507901", "nombre": "Variedad Español",        "genero": "Mix ES"},
+    {"id": "14395627421", "nombre": "Rock Nacional",      "genero": "Rock"},
+    {"id": "14395627661", "nombre": "Rock Internacional", "genero": "Rock"},
+    {"id": "14094110361", "nombre": "Variedad Inglés",    "genero": "Mix EN"},
+    {"id": "14094507901", "nombre": "Variedad Español",   "genero": "Mix ES"},
 ]
-
-# Playlist por defecto (usada si el usuario no envía ninguna)
 PLAYLIST_ID_DEFECTO = PLAYLISTS_PREDEFINIDAS[0]["id"]
 
 
 # --- Funciones auxiliares ---
-def nueva_lista_canciones(playlist_id: str):
-    """
-    Obtiene una lista de canciones mezcladas aleatoriamente.
-
-    Parameters
-    ----------
-    playlist_id : str
-        ID de la playlist en Deezer.
-
-    Returns
-    -------
-    tuple[list[int], list[dict]]
-        (indices mezclados, lista de canciones)
-    """
-    canciones = playlist_deezer(playlist_id)
-    indices = list(range(len(canciones)))
-    random.shuffle(indices)
-    return indices, canciones
-
-
 def nombre_playlist_desde_id(pid: str) -> str:
-    """Devuelve el nombre de la playlist si está en las predefinidas; si no, 'Playlist {id}'."""
+    """Nombre de la playlist si está en las predefinidas; si no, genérico."""
     for pl in PLAYLISTS_PREDEFINIDAS:
         if str(pl["id"]) == str(pid):
             return pl["nombre"]
     return f"Playlist {pid}"
 
 
+def ronda_actual():
+    """Devuelve (GameSession, error).
+
+    Lee TODO de la sesión, sin volver a pegarle al proveedor. Si la sesión
+    perdió la lista de canciones (expiró), la recarga una sola vez.
+    """
+    canciones = session.get("canciones")
+    orden = session.get("playlist_indices", [])
+    pos = session.get("playlist_pos", 0)
+
+    if canciones is None:  # la sesión expiró o se perdió: recargar
+        canciones = PROVEEDOR.obtener_canciones(
+            session.get("playlist_id", PLAYLIST_ID_DEFECTO)
+        )
+        session["canciones"] = canciones
+
+    if not orden or pos >= len(orden):
+        return None, (jsonify({"error": "No hay más canciones."}), 400)
+
+    return GameSession(canciones[orden[pos]]), None
+
+
 # --- Rutas ---
 @app.route("/")
 def index():
-    """Página principal. (Si querés poblar el select desde backend, se envían aquí también)."""
     return render_template("index.html", playlists=PLAYLISTS_PREDEFINIDAS)
 
 
 @app.route("/api/playlists")
 def api_playlists():
-    """
-    Devuelve la lista de playlists predefinidas en JSON.
-    Útil para poblar el <select> del frontend dinámicamente.
-    """
+    """Lista de playlists predefinidas en JSON (para poblar el <select>)."""
     return jsonify(PLAYLISTS_PREDEFINIDAS)
 
 
 @app.route("/start", methods=["POST"])
 def start():
-    """
-    Inicia una nueva sesión de juego.
-    Resetea la posición, historial e índices de canciones.
-    """
+    """Inicia una nueva sesión de juego. Pide la playlist UNA sola vez."""
     data = request.get_json(force=True)
     entrada = data.get("playlist_id") or None
-    nombre_boton = data.get("playlist_name")  # opcional (si lo mandás desde el front)
+    nombre_boton = data.get("playlist_name")
 
-    # Si el usuario pegó un link, extraemos el ID; si no manda nada, usamos la default
-    playlist_id = extraer_id_playlist(entrada) if entrada else PLAYLIST_ID_DEFECTO
-    canciones = playlist_deezer(playlist_id)
+    playlist_id = PROVEEDOR.extraer_id(entrada) if entrada else PLAYLIST_ID_DEFECTO
+
+    canciones = PROVEEDOR.obtener_canciones(playlist_id)
     if not canciones:
-        return jsonify({"error": "No se pudo obtener la playlist de Deezer"}), 400
+        return jsonify({"error": "No se pudo obtener la playlist"}), 400
 
-    indices, _ = nueva_lista_canciones(playlist_id)
+    indices = list(range(len(canciones)))
+    random.shuffle(indices)
+
     session.update({
         "playlist_id": playlist_id,
+        "canciones": canciones,          # lista completa, guardada una vez
         "playlist_indices": indices,
         "playlist_pos": 0,
         "historial": [],
-        "historial_global": []
+        "historial_global": [],
     })
-    session.modified = True
 
-    # Elegimos nombre de la playlist:
-    # prioridad a nombre_boton (si viene del front), luego buscamos en las predefinidas, si no armamos genérico
     nombre = nombre_boton or nombre_playlist_desde_id(playlist_id)
     return jsonify({"message": "Juego iniciado", "playlist_name": nombre})
 
 
 @app.route("/hint")
 def hint():
-    """
-    Devuelve pistas progresivas sobre la canción actual
-    según el número de intento.
-    """
-    playlist_id = session.get('playlist_id', PLAYLIST_ID_DEFECTO)
-    playlist_indices = session.get('playlist_indices', [])
-    playlist_pos = session.get('playlist_pos', 0)
-    canciones = playlist_deezer(playlist_id)
+    """Pistas progresivas sobre la canción actual según el intento."""
+    game, error = ronda_actual()
+    if error:
+        return error
 
-    if not playlist_indices or playlist_pos >= len(playlist_indices):
-        return jsonify({"error": "No hay más canciones."}), 400
+    intento = int(request.args.get("attempt", 1))
+    pistas = game.generar_pistas(intento)
 
-    idx = playlist_indices[playlist_pos]
-    cancion = canciones[idx]
-    intento = int(request.args.get('attempt', 1))
-
-    pistas = []
-    if intento >= 2:
-        pistas.append("❌ Respuesta incorrecta, sigue intentando.")
-    if intento >= 3:
-        mm, ss = divmod(cancion['duration'], 60)
-        pistas.append(f"Duración: {mm}:{str(ss).zfill(2)}")
-    if intento >= 4:
-        pistas.append(f"Álbum: {cancion['album']}")
-    if intento >= 5:
-        pistas.append(f"Artista: {cancion['artist']}")
-
+    canciones = session.get("canciones", [])
     autocomplete = [f"{x['title']} - {x['artist']}" for x in canciones]
 
     return jsonify({
-        "preview_url": cancion['preview_url'],
+        "preview_url": game.cancion["preview_url"],
         "pista": "<br>".join(pistas),
-        "canciones_posibles": autocomplete
+        "canciones_posibles": autocomplete,
     })
 
 
 @app.route("/guess", methods=["POST"])
 def guess():
-    """
-    Procesa la respuesta del jugador y actualiza la sesión.
-    Si acierta o agota intentos, pasa a la siguiente canción.
-    """
+    """Procesa la respuesta. Si acierta o agota intentos, pasa a la siguiente."""
     data = request.get_json(force=True)
     guess_txt = data.get("guess", "").strip()
 
-    playlist_id = session.get('playlist_id', PLAYLIST_ID_DEFECTO)
-    playlist_indices = session.get('playlist_indices', [])
-    playlist_pos = session.get('playlist_pos', 0)
-    canciones = playlist_deezer(playlist_id)
+    game, error = ronda_actual()
+    if error:
+        return error
 
-    if not playlist_indices or playlist_pos >= len(playlist_indices):
-        return jsonify({"error": "No hay más canciones."}), 400
+    cancion = game.cancion
+    correcto, parcial = game.evaluar(guess_txt)  # el backend ya conoce al artista
 
-    idx = playlist_indices[playlist_pos]
-    cancion = canciones[idx]
-    game = GameSession(cancion)
-    correcto = game.check_guess(guess_txt)
-
-    # Historial de intentos actuales
-    historial = session.get('historial', [])
-    historial.append({"guess": guess_txt, "correcta": correcto})
-    session['historial'] = historial
+    historial = session.get("historial", [])
+    historial.append({"guess": guess_txt, "correcta": correcto, "parcial": parcial})
+    session["historial"] = historial
 
     answer = None
     if correcto or len(historial) >= MAX_INTENTOS:
-        # Respuesta correcta o fin de intentos
         answer = f"{cancion['title']} - {cancion['artist']}"
 
-        # Guardamos en historial global
-        historial_global = session.get('historial_global', [])
+        historial_global = session.get("historial_global", [])
         historial_global.append({
-            "titulo": cancion['title'],
-            "artista": cancion['artist'],
-            "correcta": correcto
+            "titulo": cancion["title"],
+            "artista": cancion["artist"],
+            "correcta": correcto,
         })
-        session['historial_global'] = historial_global
+        session["historial_global"] = historial_global
 
-        # Avanzamos a siguiente canción
-        playlist_pos += 1
-        if playlist_pos >= len(playlist_indices):
-            playlist_indices, _ = nueva_lista_canciones(playlist_id)
-            playlist_pos = 0
-            session['playlist_indices'] = playlist_indices
-
-        session['playlist_pos'] = playlist_pos
-        session['historial'] = []  # reset intentos
-
-    session.modified = True
+        # Avanzar; si se acabó la lista, remezclar (sin volver a pedir nada).
+        indices = session.get("playlist_indices", [])
+        pos = session.get("playlist_pos", 0) + 1
+        if pos >= len(indices):
+            random.shuffle(indices)
+            session["playlist_indices"] = indices
+            pos = 0
+        session["playlist_pos"] = pos
+        session["historial"] = []  # reset de intentos
 
     return jsonify({
         "correcto": correcto,
+        "parcial": parcial,
         "answer": answer,
-        "preview_url": cancion['preview_url'],
+        "preview_url": cancion["preview_url"],
         "intentos_restantes": max(0, MAX_INTENTOS - len(historial)),
         "jugadas": historial,
-        "historial_global": session.get('historial_global', [])
+        "historial_global": session.get("historial_global", []),
     })
 
 
 @app.route("/historial-global")
 def historial_global():
-    """Devuelve el historial global de canciones jugadas."""
-    return jsonify(session.get('historial_global', []))
+    return jsonify(session.get("historial_global", []))
 
 
 @app.route("/reset", methods=["POST"])
 def reset():
-    """Reinicia la sesión del juego."""
     session.clear()
-    return '', 204
+    return "", 204
 
 
 if __name__ == "__main__":
+    # debug=True es solo para desarrollo local.
+    # En producción usá gunicorn (ya está en requirements.txt).
     app.run(debug=True)

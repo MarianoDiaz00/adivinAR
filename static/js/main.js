@@ -1,6 +1,8 @@
 document.addEventListener("DOMContentLoaded", () => {
   const FRAGMENT_DURATIONS = [0.5, 1, 2, 4, 6];
   const MAX_INTENTS = 5;
+  const AUDIO_TIMEOUT_MS = 8000;   // si el audio no carga en 8s, lo damos por fallado
+
   let currentAttempt = 0;
   let roundHistory = [];
   let canInteract = true;
@@ -9,6 +11,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // Control de versión de pista/hint para evitar carreras
   let hintReqSeq = 0;
   let currentPreviewUrl = null;
+
+  // Estado de carga del audio
+  let audioWatchdog = null;   // timer que detecta "nunca cargó"
+  let audioFallo = false;     // true si el preview no se pudo cargar
 
   // Helper
   const $ = (id, optional = false) => {
@@ -33,7 +39,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultMsg      = $("result-message");
   const historialEl    = $("historial");
   const guessInput     = $("guess-input");
-  const autoList       = $("autocomplete-list", true);
+  const scoreEl        = $("score", true);
   const solvedListEl   = $("solved-songs", true);
 
   const screenSelect   = $("playlist-select-screen", true);
@@ -130,6 +136,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (screenSelect) screenSelect.style.display = "none";
         screenGame.style.display = "block";
         if (playlistInfo) playlistInfo.textContent = data.playlist_name || "";
+        setScore(data.puntaje || 0);
         actualizarHistorialGlobal();
         iniciarRonda();
       })
@@ -158,7 +165,6 @@ document.addEventListener("DOMContentLoaded", () => {
     btnNext.style.display = "none";
     guessInput.value = "";
 
-    btnPlayFragment.disabled = true;
     btnGuess.disabled = false;
 
     actualizarIntentos();
@@ -166,55 +172,104 @@ document.addEventListener("DOMContentLoaded", () => {
     cargarHint();
   }
 
-  function cargarHint() {
+  // --- Manejo de audio ---
+  function limpiarHandlersAudio() {
+    audioEl.oncanplay = null;
+    audioEl.onloadeddata = null;
+    audioEl.onloadedmetadata = null;
+    audioEl.onerror = null;
+    if (audioWatchdog) { clearTimeout(audioWatchdog); audioWatchdog = null; }
+  }
+
+  function marcarBotonReintentar(activo) {
+    audioFallo = activo;
+    btnPlayFragment.disabled = false; // NUNCA lo dejamos muerto
+    btnPlayFragment.textContent = activo
+      ? "🔄 Reintentar audio"
+      : "🔊 Escuchar Fragmento";
+  }
+
+  /**
+   * Pide la pista y prepara el audio.
+   * @param {boolean} refrescar - si true, le pide al backend links de preview nuevos
+   *                              (los de Deezer vencen tras un rato de juego).
+   */
+  function cargarHint(refrescar = false) {
     const req = ++hintReqSeq;
     currentPreviewUrl = null;
+    audioFallo = false;
     btnPlayFragment.disabled = true;
+    btnPlayFragment.textContent = "🔊 Escuchar Fragmento";
     clearAudio(true);
 
     const safeAttempt = Number.isFinite(currentAttempt) ? currentAttempt : 0;
+    const url = `/hint?attempt=${safeAttempt + 1}${refrescar ? "&refresh=1" : ""}`;
 
-    fetch(`/hint?attempt=${safeAttempt + 1}`)
+    fetch(url)
       .then(ensureJSON)
       .then(data => {
         if (req !== hintReqSeq) return; // llegó tarde, ignoramos
 
-        if (data.error) { setHint(data.error); return; }
+        if (data.error) { setHint(data.error); marcarBotonReintentar(true); return; }
 
         if (data.pista && data.pista.trim() !== "") {
           setHint("💡 " + data.pista);
-        } else {
+        } else if (!refrescar) {
           setHint("¡Escuchá el fragmento y adiviná la canción!");
         }
 
-        actualizarAutocomplete(data.canciones_posibles || []);
-
-        if (data.preview_url) {
-          currentPreviewUrl = data.preview_url;
-          audioEl.src = currentPreviewUrl;
-          audioEl.load();
-
-          const enableIfMatch = () => {
-            if (req === hintReqSeq && currentPreviewUrl && audioEl.src.includes(currentPreviewUrl)) {
-              btnPlayFragment.disabled = false;
-            }
-            audioEl.oncanplay = audioEl.onloadeddata = audioEl.onloadedmetadata = null;
-          };
-          audioEl.oncanplay = enableIfMatch;
-          audioEl.onloadeddata = enableIfMatch;
-          audioEl.onloadedmetadata = enableIfMatch;
-        } else {
-          currentPreviewUrl = null;
-          btnPlayFragment.disabled = true;
+        if (!data.preview_url) {
+          marcarBotonReintentar(true);
+          setHint("No hay audio para esta canción. Tocá 🔄 o pasá de tema.");
+          return;
         }
+
+        currentPreviewUrl = data.preview_url;
+        audioEl.src = currentPreviewUrl;
+        audioEl.load();
+
+        const listo = () => {
+          if (req !== hintReqSeq) return;
+          limpiarHandlersAudio();
+          audioFallo = false;
+          btnPlayFragment.disabled = false;
+          btnPlayFragment.textContent = "🔊 Escuchar Fragmento";
+        };
+
+        const fallo = () => {
+          if (req !== hintReqSeq) return;
+          limpiarHandlersAudio();
+          if (!refrescar) {
+            // Muy probablemente venció el link del preview: pedimos uno nuevo.
+            setHint("🔄 Renovando el audio…");
+            cargarHint(true);
+          } else {
+            // Ya reintentamos con links frescos y sigue fallando.
+            setHint("No se pudo cargar el audio. Tocá 🔄 para reintentar.");
+            marcarBotonReintentar(true);
+          }
+        };
+
+        audioEl.oncanplay = listo;
+        audioEl.onloadeddata = listo;
+        audioEl.onloadedmetadata = listo;
+        audioEl.onerror = fallo;
+        // Red 
+        audioWatchdog = setTimeout(fallo, AUDIO_TIMEOUT_MS);
       })
       .catch(err => {
         console.error(err);
-        setHint("No se pudo cargar la pista. Probá de nuevo.");
+        setHint("No se pudo cargar la pista. Tocá 🔄 para reintentar.");
+        marcarBotonReintentar(true);
       });
   }
 
   btnPlayFragment.addEventListener("click", () => {
+    // Si el audio venía fallado, el botón funciona como "reintentar".
+    if (audioFallo) {
+      cargarHint(true);
+      return;
+    }
     if (!canInteract || currentAttempt >= MAX_INTENTS) return;
     if (!currentPreviewUrl || !audioEl.src.includes(currentPreviewUrl)) {
       setHint("Preparando fragmento…");
@@ -226,7 +281,9 @@ document.addEventListener("DOMContentLoaded", () => {
     audioEl.currentTime = 0;
     audioEl.volume = 0.7;
     audioEl.play().catch(() => {
-      alert("Tu navegador bloqueó la reproducción automática. Volvé a intentar.");
+      // Puede ser bloqueo de autoplay o un link vencido: ofrecemos reintentar.
+      setHint("No se pudo reproducir. Tocá 🔄 para reintentar.");
+      marcarBotonReintentar(true);
     });
     audioTimeout = setTimeout(() => {
       audioEl.pause();
@@ -249,22 +306,23 @@ document.addEventListener("DOMContentLoaded", () => {
     })
       .then(ensureJSON)
       .then(data => {
-        // El servidor es la fuente de verdad: cada jugada ya trae correcta y parcial.
+        // El servidor es la fuente de verdad: cada jugada trae correcta y parcial.
         roundHistory = data.jugadas || [];
         currentAttempt = roundHistory.length;
 
         guessInput.value = "";
+        setScore(data.puntaje);
 
         if (data.correcto) {
           if (currentAttempt === 1 && window.confetti) {
             window.confetti({ particleCount: 80, spread: 70, origin: { y: 0.5 } });
           }
-          setResult("¡Correcto! Era: " + data.answer, true);
+          setResult("¡Correcto! Era: " + data.answer + puntosTxt(data.puntos_ronda), true);
           btnNext.style.display = "block";
           playFullPreview(data.preview_url);
           actualizarHistorialGlobal();
         } else if (data.answer) {
-          setResult("Fin del juego. Era: " + data.answer, false);
+          setResult("Fin del juego. Era: " + data.answer + puntosTxt(data.puntos_ronda), false);
           btnNext.style.display = "block";
           playFullPreview(data.preview_url);
           actualizarHistorialGlobal();
@@ -295,6 +353,15 @@ document.addEventListener("DOMContentLoaded", () => {
   btnNext.addEventListener("click", iniciarRonda);
 
   // Helpers UI
+  function puntosTxt(p) {
+    if (typeof p !== "number") return "";
+    return ` (+${p} ${p === 1 ? "punto" : "puntos"})`;
+  }
+
+  function setScore(n) {
+    if (scoreEl) scoreEl.textContent = `Puntaje: ${n || 0}`;
+  }
+
   function actualizarIntentos() {
     attemptsBox.innerHTML = "";
     for (let i = 0; i < MAX_INTENTS; i++) {
@@ -332,7 +399,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (it.correcta) { emoji = "✅"; clase = "correct"; }
         else if (it.parcial) { emoji = "🟡"; clase = "partial"; }
         else { emoji = "❌"; clase = "wrong"; }
-        return `<span class="${clase}">${emoji} ${i + 1}: ${it.guess}</span>`;
+        return `<span class="${clase}">${emoji} ${i + 1}: ${it.guess || "(vacío)"}</span>`;
       }).join("<br>");
   }
 
@@ -363,17 +430,6 @@ document.addEventListener("DOMContentLoaded", () => {
       .catch(err => console.error("Error actualizando historial:", err));
   }
 
-  function actualizarAutocomplete(list) {
-    if (!autoList) return;
-    autoList.innerHTML = "";
-    (list || []).forEach(c => {
-      if (!c || c.includes("undefined")) return;
-      const opt = document.createElement("option");
-      opt.value = c;
-      autoList.appendChild(opt);
-    });
-  }
-
   function playFullPreview(url) {
     if (!url) return;
     audioEl.src = url;
@@ -383,6 +439,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function clearAudio(resetSrc = false) {
     if (audioTimeout) clearTimeout(audioTimeout);
     audioTimeout = null;
+    if (resetSrc) limpiarHandlersAudio();
     try { audioEl.pause(); } catch {}
     try { audioEl.currentTime = 0; } catch {}
     if (resetSrc) {
@@ -416,6 +473,7 @@ document.addEventListener("DOMContentLoaded", () => {
     historialEl.innerHTML = "";
     attemptsBox.innerHTML = "";
     attemptsRemain.textContent = "";
+    setScore(0);
     clearAudio(true);
   }
 });

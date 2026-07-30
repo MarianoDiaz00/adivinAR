@@ -25,8 +25,12 @@ class ProveedorMusica(ABC):
     nombre: str = "desconocido"
 
     @abstractmethod
-    def obtener_canciones(self, playlist_id: str) -> List[Cancion]:
-        """Devuelve las canciones (con preview) de una playlist."""
+    def obtener_canciones(self, playlist_id: str, refrescar: bool = False) -> List[Cancion]:
+        """Devuelve las canciones (con preview) de una playlist.
+
+        refrescar=True ignora la caché y vuelve a pedir los datos al servicio
+        (necesario porque los links de preview vencen).
+        """
 
     @abstractmethod
     def extraer_id(self, texto: str) -> Optional[str]:
@@ -43,11 +47,11 @@ class DeezerProvider(ProveedorMusica):
         # Caché en memoria: { playlist_id: (timestamp, canciones) }.
         self._cache: Dict[str, Tuple[float, List[Cancion]]] = {}
 
-    def obtener_canciones(self, playlist_id: str) -> List[Cancion]:
+    def obtener_canciones(self, playlist_id: str, refrescar: bool = False) -> List[Cancion]:
         playlist_id = str(playlist_id)
 
         entrada = self._cache.get(playlist_id)
-        if entrada and (time.time() - entrada[0]) < Juego.CACHE_TTL:
+        if not refrescar and entrada and (time.time() - entrada[0]) < Juego.CACHE_TTL:
             return entrada[1]
 
         canciones: List[Cancion] = []

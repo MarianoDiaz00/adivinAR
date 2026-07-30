@@ -1,3 +1,4 @@
+import os
 import random
 import time
 
@@ -105,10 +106,33 @@ def ronda_actual(refrescar: bool = False):
     return GameSession(canciones[orden[pos]]), None
 
 
+def lista_autocomplete():
+    """Títulos de la playlist para el autocompletado del frontend."""
+    return [f"{c['title']} - {c['artist']}" for c in (session.get("canciones") or [])]
+
+
 def puntos_por_acierto(intento: int) -> int:
     """Puntos al acertar en un intento dado (1-based). Más rápido, más puntos."""
     idx = min(intento, len(config.Juego.PUNTOS)) - 1
     return config.Juego.PUNTOS[idx]
+
+
+# --- Anti-caché de archivos estáticos ---
+@app.context_processor
+def version_assets():
+    """Expone ASSET_V a las plantillas: cambia cuando cambian css/js.
+
+    Sirve para que el navegador no siga usando una versión vieja de
+    main.js o style.css después de editarlos.
+    """
+    marcas = []
+    for rel in ("static/js/main.js", "static/css/style.css"):
+        ruta = os.path.join(app.root_path, rel)
+        try:
+            marcas.append(str(int(os.path.getmtime(ruta))))
+        except OSError:
+            marcas.append("0")
+    return {"ASSET_V": "-".join(marcas)}
 
 
 # --- Rutas ---
@@ -150,7 +174,14 @@ def start():
     })
 
     nombre = nombre_boton or nombre_playlist_desde_id(playlist_id)
-    return jsonify({"message": "Juego iniciado", "playlist_name": nombre, "puntaje": 0})
+    return jsonify({
+        "message": "Juego iniciado",
+        "playlist_name": nombre,
+        "puntaje": 0,
+        # La mandamos UNA vez al arrancar; el front la cachea y no la vuelve
+        # a pedir en cada intento (antes viajaba entera en cada pista).
+        "canciones_posibles": lista_autocomplete(),
+    })
 
 
 @app.route("/hint")
@@ -168,11 +199,16 @@ def hint():
     intento = int(request.args.get("attempt", 1))
     pistas = game.generar_pistas(intento)
 
-    # Nota: NO mandamos la lista de canciones (regalaba la respuesta).
-    return jsonify({
+    respuesta = {
         "preview_url": game.cancion["preview_url"],
         "pista": "<br>".join(pistas),
-    })
+    }
+    # Solo si el front avisa que no tiene la lista (por ejemplo, si el usuario
+    # recargó la página en medio de la partida).
+    if request.args.get("lista") == "1":
+        respuesta["canciones_posibles"] = lista_autocomplete()
+
+    return jsonify(respuesta)
 
 
 @app.route("/guess", methods=["POST"])

@@ -24,9 +24,16 @@
         <input id="playlist-input" class="input" placeholder="Enlace o ID de Playlist Deezer" aria-label="Enlace o ID de Playlist Deezer">
         <button id="start-with-playlist" class="btn btn-primary" type="button">Jugar con mi Playlist</button>
 
-        <!-- Botones de playlists predefinidas (se llenan por JS con /api/playlists) -->
+        <!-- Botones de playlists predefinidas.
+             Se renderizan EN EL SERVIDOR: así aparecen siempre, aunque falle
+             el pedido a /api/playlists o el JS tarde en cargar.
+             El JS solo los usa (delegación de eventos), no necesita crearlos. -->
         <div id="predef-buttons" class="playlist-grid">
-          <!-- JS crea botones con class="btn btn-secondary playlist-btn" data-playlist-id="..." -->
+          {% for pl in playlists %}
+            <button type="button"
+                    class="btn btn-secondary playlist-btn"
+                    data-playlist-id="{{ pl.id }}">{{ pl.nombre }}</button>
+          {% endfor %}
         </div>
       </div>
     </section>
@@ -111,92 +118,6 @@
     document.getElementById('toggle-dark')?.addEventListener('click', function(){ applyTheme(this); });
     document.getElementById('toggle-dark-top')?.addEventListener('click', function(){ applyTheme(this); });
 
-    (function initTheme(){
-      try {
-        const saved = localStorage.getItem('theme');
-        if (saved) document.body.setAttribute('data-theme', saved);
-      } catch(e){}
-    })();
-  </script>
-</body>
-</html>
-  <section class="container" id="juego-main" style="display:none;">
-    <div class="top-bar">
-      <button id="btn-volver-playlist" class="btn btn-secondary" type="button" title="Volver a la selección">⬅</button>
-
-      <div class="brand" aria-label="AdivinAR">
-        <span class="logo" aria-hidden="true">🎵</span>
-        AdivinAR
-      </div>
-
-      <button id="toggle-dark" class="theme-toggle" type="button" title="Cambiar tema">🌓</button>
-    </div>
-
-    <p id="playlist-info" class="subtitle"></p>
-
-    <div class="attempt-boxes" id="attempt-boxes" aria-label="Intentos"></div>
-
-    <!-- Pista / hint -->
-    <p id="hint-text" class="hint-box" aria-live="polite"></p>
-
-    <!-- Reproductor -->
-    <audio id="audio-player" style="display:none" preload="auto" crossorigin="anonymous"></audio>
-    <div class="actions-row">
-      <button id="play-fragment" class="btn" type="button" aria-label="Escuchar fragmento de la canción">
-        🔊 Escuchar Fragmento
-      </button>
-    </div>
-
-    <!-- Respuesta -->
-    <div class="guess-row mt-12">
-      <input id="guess-input" class="input" list="autocomplete-list" placeholder="¿Qué canción es?" aria-label="Escribir nombre de la canción">
-      <datalist id="autocomplete-list"></datalist>
-      <button id="guess-btn" class="btn" type="button" aria-label="Adivinar canción">Adivinar</button>
-    </div>
-
-    <div class="actions-row">
-      <button id="reset-btn" class="btn" type="button" style="display:none;">Siguiente Canción</button>
-    </div>
-
-    <p id="result-message" class="mt-8"></p>
-    <p id="attempts-remaining"></p>
-
-    <!-- Historial de la ronda -->
-    <div id="historial" class="historial mt-12"></div>
-
-    <!-- NUEVA disposición de resultados: IZQ no acertadas / DER acertadas -->
-    <div class="results-wrap mt-16">
-      <div class="results-col">
-        <h3>No acertadas</h3>
-        <ul id="solved-wrong" class="results-list wrong" aria-live="polite"></ul>
-      </div>
-      <div class="results-col">
-        <h3>Acertadas</h3>
-        <ul id="solved-correct" class="results-list correct" aria-live="polite"></ul>
-      </div>
-    </div>
-  </section>
-
-  <!-- Confetti lib -->
-  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-
-  <!-- Toggle de tema: el CSS usa body[data-theme="..."] -->
-  <script>
-    const applyTheme = (elBtn) => {
-      const current = document.body.getAttribute('data-theme') || 'dark';
-      const next = current === 'light' ? 'dark' : 'light';
-      document.body.setAttribute('data-theme', next);
-      try { localStorage.setItem('theme', next); } catch(e){}
-      if (elBtn) elBtn.textContent = '🌓';
-    };
-
-    // Botón en top bar del juego
-    document.getElementById('toggle-dark')?.addEventListener('click', function(){ applyTheme(this); });
-    // Botón en la landing
-    document.getElementById('toggle-dark-top')?.addEventListener('click', function(){ applyTheme(this); });
-
-    // Preferencia guardada
     (function initTheme(){
       try {
         const saved = localStorage.getItem('theme');

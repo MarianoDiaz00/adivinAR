@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Estado de carga del audio
   let audioFallo = false;     // true si el preview no se pudo cargar
   let refrescosRonda = 0;     // cuántas veces renovamos el audio en esta ronda
+  let listaCargada = false;   // si ya tenemos las opciones del autocompletado
 
   // Helper
   const $ = (id, optional = false) => {
@@ -39,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultMsg      = $("result-message");
   const historialEl    = $("historial");
   const guessInput     = $("guess-input");
+  const autoList       = $("autocomplete-list", true);
   const scoreEl        = $("score", true);
   const solvedListEl   = $("solved-songs", true);
 
@@ -145,6 +147,7 @@ document.addEventListener("DOMContentLoaded", () => {
         screenGame.style.display = "block";
         if (playlistInfo) playlistInfo.textContent = data.playlist_name || "";
         setScore(data.puntaje || 0);
+        actualizarAutocomplete(data.canciones_posibles);
         actualizarHistorialGlobal();
         iniciarRonda();
       })
@@ -228,7 +231,9 @@ document.addEventListener("DOMContentLoaded", () => {
     clearAudio(true);
 
     const safeAttempt = Number.isFinite(currentAttempt) ? currentAttempt : 0;
-    const url = `/hint?attempt=${safeAttempt + 1}${refrescar ? "&refresh=1" : ""}`;
+    const url = `/hint?attempt=${safeAttempt + 1}`
+      + (refrescar ? "&refresh=1" : "")
+      + (listaCargada ? "" : "&lista=1");   // solo si la perdimos (recarga de página)
 
     fetch(url)
       .then(ensureJSON)
@@ -236,6 +241,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (req !== hintReqSeq) return; // llegó tarde, ignoramos
 
         if (data.error) { setHint(data.error); marcarBotonReintentar(true); return; }
+
+        if (data.canciones_posibles) actualizarAutocomplete(data.canciones_posibles);
 
         if (data.pista && data.pista.trim() !== "") {
           setHint("💡 " + data.pista);
@@ -457,6 +464,20 @@ document.addEventListener("DOMContentLoaded", () => {
       .catch(err => console.error("Error actualizando historial:", err));
   }
 
+  function actualizarAutocomplete(lista) {
+    if (!autoList || !Array.isArray(lista) || !lista.length) return;
+    const frag = document.createDocumentFragment();
+    lista.forEach(c => {
+      if (!c || c.includes("undefined")) return;
+      const opt = document.createElement("option");
+      opt.value = c;
+      frag.appendChild(opt);
+    });
+    autoList.innerHTML = "";
+    autoList.appendChild(frag);
+    listaCargada = true;
+  }
+
   function playFullPreview(url) {
     if (!url) return;
     audioEl.src = url;
@@ -503,6 +524,9 @@ document.addEventListener("DOMContentLoaded", () => {
     attemptsBox.innerHTML = "";
     attemptsRemain.textContent = "";
     setScore(0);
+    listaCargada = false;
+    if (autoList) autoList.innerHTML = "";
     clearAudio(true);
   }
 });
+

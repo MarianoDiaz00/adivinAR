@@ -5,7 +5,7 @@
   <title>AdivinAR</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ ASSET_V }}">
 </head>
 
 <!-- El CSS usa body[data-theme="light|dark"]. Arrancamos en dark. -->
@@ -72,9 +72,12 @@
       </button>
     </div>
 
-    <!-- Respuesta (sin datalist: el autocompletado regalaba la respuesta) -->
+    <!-- Respuesta con autocompletado de la playlist.
+         OJO: 'autocomplete="off"' NO va acá: en varios navegadores impide
+         que se despliegue el <datalist>. -->
     <div class="guess-row mt-12">
-      <input id="guess-input" class="input" placeholder="¿Qué canción es?" aria-label="Escribir nombre de la canción" autocomplete="off">
+      <input id="guess-input" class="input" list="autocomplete-list" placeholder="¿Qué canción es?" aria-label="Escribir nombre de la canción">
+      <datalist id="autocomplete-list"></datalist>
       <button id="guess-btn" class="btn" type="button" aria-label="Adivinar canción">Adivinar</button>
     </div>
 
@@ -103,7 +106,7 @@
 
   <!-- Confetti lib -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/main.js') }}?v={{ ASSET_V }}"></script>
 
   <!-- Toggle de tema: el CSS usa body[data-theme="..."] -->
   <script>

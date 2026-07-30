@@ -1,7 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   const FRAGMENT_DURATIONS = [0.5, 1, 2, 4, 6];
   const MAX_INTENTS = 5;
-  const AUDIO_TIMEOUT_MS = 8000;   // si el audio no carga en 8s, lo damos por fallado
+  const MAX_REFRESCOS = 2;         // renovaciones de audio por ronda (anti-bucle)
 
   let currentAttempt = 0;
   let roundHistory = [];
@@ -13,8 +13,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentPreviewUrl = null;
 
   // Estado de carga del audio
-  let audioWatchdog = null;   // timer que detecta "nunca cargó"
   let audioFallo = false;     // true si el preview no se pudo cargar
+  let refrescosRonda = 0;     // cuántas veces renovamos el audio en esta ronda
 
   // Helper
   const $ = (id, optional = false) => {
@@ -157,6 +157,7 @@ document.addEventListener("DOMContentLoaded", () => {
     currentAttempt = 0;
     roundHistory = [];
     canInteract = true;
+    refrescosRonda = 0;
     clearAudio(true); // reset duro: sin src
 
     setResult("");
@@ -178,7 +179,23 @@ document.addEventListener("DOMContentLoaded", () => {
     audioEl.onloadeddata = null;
     audioEl.onloadedmetadata = null;
     audioEl.onerror = null;
-    if (audioWatchdog) { clearTimeout(audioWatchdog); audioWatchdog = null; }
+  }
+
+  /**
+   * Se llama SOLO ante un fallo real de audio (link vencido, media rota).
+   * Intenta renovar el preview una vez; si vuelve a fallar, deja el botón
+   * como "reintentar" para que el juego nunca quede trabado.
+   */
+  function manejarAudioRoto(yaSeRefresco) {
+    limpiarHandlersAudio();
+    if (!yaSeRefresco && refrescosRonda < MAX_REFRESCOS) {
+      refrescosRonda++;
+      setHint("🔄 Renovando el audio…");
+      cargarHint(true);
+    } else {
+      setHint("No se pudo cargar el audio. Tocá 🔄 para reintentar.");
+      marcarBotonReintentar(true);
+    }
   }
 
   function marcarBotonReintentar(activo) {
@@ -228,11 +245,259 @@ document.addEventListener("DOMContentLoaded", () => {
         audioEl.src = currentPreviewUrl;
         audioEl.load();
 
-        const listo = () => {
+        // Habilitamos el botón APENAS tenemos URL. No esperamos 'canplay':
+        // muchos navegadores (sobre todo en celular) no cargan nada hasta que
+        // el usuario toca, y esperar ese evento dejaba el botón muerto.
+        audioFallo = false;
+        btnPlayFragment.disabled = false;
+        btnPlayFragment.textContent = "🔊 Escuchar Fragmento";
+
+        // Único fallo que damos por real en la carga: un MediaError concreto
+        // sobre el preview que estamos usando ahora.
+        audioEl.onerror = () => {
           if (req !== hintReqSeq) return;
-          limpiarHandlersAudio();
-          audioFallo = false;
-          btnPlayFragment.disabled = false;
+          if (!audioEl.error) return;                 // error sin causa: ignorar
+          if (!audioEl.src || !currentPreviewUrl) return;
+          if (!audioEl.src.includes(currentPreviewUrl)) return;  // no es el actual
+          manejarAudioRoto(refrescar);
+        };
+      })
+      .catch(err => {
+        console.error(err);
+        setHint("No se pudo cargar la pista. Tocá 🔄 para reintentar.");
+        marcarBotonReintentar(true);
+      });
+  }
+
+  btnPlayFragment.addEventListener("click", () => {
+    // Si el audio venía fallado, el botón funciona como "reintentar".
+    if (audioFallo) {
+      cargarHint(true);
+      return;
+    }
+    if (!canInteract || currentAttempt >= MAX_INTENTS) return;
+    if (!currentPreviewUrl || !audioEl.src.includes(currentPreviewUrl)) {
+      setHint("Preparando fragmento…");
+      cargarHint();
+      return;
+    }
+
+    if (audioTimeout) { clearTimeout(audioTimeout); audioTimeout = null; }
+    try { audioEl.currentTime = 0; } catch {}
+    audioEl.volume = 0.7;
+
+    const duracion = (FRAGMENT_DURATIONS[currentAttempt] || 1) * 1000;
+
+    audioEl.play().then(() => {
+      // El cronómetro arranca cuando el audio EMPIEZA A SONAR de verdad,
+      // no cuando pedimos reproducir: si tardaba en cargar, antes se comía
+      // el fragmento en silencio.
+      audioTimeout = setTimeout(() => {
+        try { audioEl.pause(); audioEl.currentTime = 0; } catch {}
+      }, duracion);
+    }).catch(err => {
+      const tipo = err && err.name;
+      // Errores BENIGNOS: no son un audio roto, no hay que "reparar" nada.
+      //  - NotAllowedError: el navegador pide un toque del usuario (autoplay).
+      //  - AbortError: se pisaron dos play/pause seguidos.
+      if (tipo === "NotAllowedError" || tipo === "AbortError") {
+        setHint("🔊 Tocá el botón otra vez para escuchar el fragmento.");
+        return;
+      }
+      // Cualquier otro: el preview probablemente venció.
+      console.warn("Fallo real de reproducción:", tipo, err);
+      manejarAudioRoto(false);
+    });
+  });
+
+  // Adivinar (permite envíos vacíos; el "parcial" lo decide el servidor)
+  btnGuess.addEventListener("click", () => {
+    if (!canInteract) return;
+
+    const guess = (guessInput.value ?? "");
+    canInteract = false;
+    btnGuess.disabled = true;
+
+    fetch("/guess", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ guess })
+    })
+      .then(ensureJSON)
+      .then(data => {
+        // El servidor es la fuente de verdad: cada jugada trae correcta y parcial.
+        roundHistory = data.jugadas || [];
+        currentAttempt = roundHistory.length;
+
+        guessInput.value = "";
+        setScore(data.puntaje);
+
+        if (data.correcto) {
+          if (currentAttempt === 1 && window.confetti) {
+            window.confetti({ particleCount: 80, spread: 70, origin: { y: 0.5 } });
+          }
+          setResult("¡Correcto! Era: " + data.answer + puntosTxt(data.puntos_ronda), true);
+          btnNext.style.display = "block";
+          playFullPreview(data.preview_url);
+          actualizarHistorialGlobal();
+        } else if (data.answer) {
+          setResult("Fin del juego. Era: " + data.answer + puntosTxt(data.puntos_ronda), false);
+          btnNext.style.display = "block";
+          playFullPreview(data.preview_url);
+          actualizarHistorialGlobal();
+        } else {
+          setResult(data.parcial ? "🟡 ¡Casi! Acertaste el artista" : "Incorrecto", false);
+          cargarHint();
+          btnGuess.disabled = false;
+        }
+
+        actualizarIntentos();
+        mostrarHistorial();
+      })
+      .catch(err => {
+        console.error(err);
+        setResult(`Ocurrió un error. ${err.message || ""}`, false);
+        btnGuess.disabled = false;
+      })
+      .finally(() => {
+        canInteract = true;
+      });
+  });
+
+  // Permitir Enter incluso vacío
+  guessInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") btnGuess.click();
+  });
+
+  btnNext.addEventListener("click", iniciarRonda);
+
+  // Helpers UI
+  function puntosTxt(p) {
+    if (typeof p !== "number") return "";
+    return ` (+${p} ${p === 1 ? "punto" : "puntos"})`;
+  }
+
+  function setScore(n) {
+    if (scoreEl) scoreEl.textContent = `Puntaje: ${n || 0}`;
+  }
+
+  function actualizarIntentos() {
+    attemptsBox.innerHTML = "";
+    for (let i = 0; i < MAX_INTENTS; i++) {
+      const j = roundHistory[i];
+      const estado = j
+        ? (j.correcta ? "correct" : (j.parcial ? "partial" : "wrong"))
+        : "empty";
+      const span = document.createElement("span");
+      span.className = "attempt-square " + estado;
+      attemptsBox.appendChild(span);
+    }
+    attemptsRemain.innerHTML =
+      `<b>${Math.max(0, MAX_INTENTS - currentAttempt)}</b> intentos restantes`;
+  }
+
+  function setHint(msg) { hintText.innerHTML = msg || ""; }
+
+  function setResult(msg, ok = null) {
+    resultMsg.textContent = msg || "";
+    resultMsg.classList.toggle("success", !!ok);
+    resultMsg.style.color = ok === null ? "inherit" : (ok ? "var(--success)" : "var(--danger)");
+    resultMsg.classList.add("show-result");
+  }
+
+  function mostrarHistorial() {
+    if (!roundHistory.length) {
+      historialEl.innerHTML = "";
+      return;
+    }
+
+    historialEl.innerHTML =
+      "<b>Jugadas ronda actual:</b><br>" +
+      roundHistory.map((it, i) => {
+        let emoji, clase;
+        if (it.correcta) { emoji = "✅"; clase = "correct"; }
+        else if (it.parcial) { emoji = "🟡"; clase = "partial"; }
+        else { emoji = "❌"; clase = "wrong"; }
+        return `<span class="${clase}">${emoji} ${i + 1}: ${it.guess || "(vacío)"}</span>`;
+      }).join("<br>");
+  }
+
+  function actualizarHistorialGlobal() {
+    const wrongEl   = document.getElementById("solved-wrong");
+    const correctEl = document.getElementById("solved-correct");
+    const singleEl  = solvedListEl || null;
+
+    fetch("/historial-global")
+      .then(ensureJSON)
+      .then(historial => {
+        if (wrongEl)   wrongEl.innerHTML = "";
+        if (correctEl) correctEl.innerHTML = "";
+        if (singleEl)  singleEl.innerHTML = "";
+
+        (historial || []).forEach(item => {
+          const li = document.createElement("li");
+          li.textContent = `${item.titulo} — ${item.artista}`;
+          if (item.correcta) {
+            if (correctEl) correctEl.appendChild(li);
+            else if (singleEl) { li.style.color = "var(--success)"; singleEl.appendChild(li); }
+          } else {
+            if (wrongEl) wrongEl.appendChild(li);
+            else if (singleEl) { li.style.color = "var(--danger)"; singleEl.appendChild(li); }
+          }
+        });
+      })
+      .catch(err => console.error("Error actualizando historial:", err));
+  }
+
+  function playFullPreview(url) {
+    if (!url) return;
+    audioEl.src = url;
+    audioEl.play().catch(() => {});
+  }
+
+  function clearAudio(resetSrc = false) {
+    if (audioTimeout) clearTimeout(audioTimeout);
+    audioTimeout = null;
+    if (resetSrc) limpiarHandlersAudio();
+    try { audioEl.pause(); } catch {}
+    try { if (audioEl.currentTime) audioEl.currentTime = 0; } catch {}
+    if (resetSrc) {
+      // OJO: removeAttribute("src") + load() hace que el navegador emita un
+      // evento 'error' espurio ("Empty src"). Por eso limpiamos los handlers
+      // ANTES (arriba) y NO llamamos a load() con el src vacío.
+      try { audioEl.removeAttribute("src"); } catch {}
+    }
+  }
+
+  function ensureJSON(resp) {
+    if (!resp.ok) {
+      return resp.json().then(j => {
+        const msg = j && (j.error || j.message || JSON.stringify(j));
+        throw new Error(`HTTP ${resp.status}${msg ? `: ${msg}` : ""}`);
+      }).catch(() => { throw new Error(`HTTP ${resp.status}`); });
+    }
+    return resp.json();
+  }
+
+  // Delegación defensiva por si JS crea botones luego
+  document.addEventListener("click", e => {
+    const btn = e.target.closest(".playlist-btn");
+    if (!btn) return;
+    const playlistId = btn.getAttribute("data-playlist-id");
+    const playlistName = btn.textContent;
+    startGame(playlistId || null, playlistName || null);
+  });
+
+  function limpiarUI() {
+    setResult("");
+    setHint("");
+    historialEl.innerHTML = "";
+    attemptsBox.innerHTML = "";
+    attemptsRemain.textContent = "";
+    setScore(0);
+    clearAudio(true);
+  }
+});
           btnPlayFragment.textContent = "🔊 Escuchar Fragmento";
         };
 

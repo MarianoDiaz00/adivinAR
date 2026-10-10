@@ -34,7 +34,7 @@ PLAYLISTS_PREDEFINIDAS = [
     {"id": "14395627421", "nombre": "Rock Nacional",      "genero": "Rock"},
     {"id": "14395627661", "nombre": "Rock Internacional", "genero": "Rock"},
     {"id": "14094110361", "nombre": "Variedad Inglés",    "genero": "Mix EN"},
-    {"id": "14094507901", "nombre": "Variedad Español",   "genero": "Mix ES"},
+    {"id": "15845219761", "nombre": "Cumple Romi",   "genero": "Mix ES"},
 ]
 PLAYLIST_ID_DEFECTO = PLAYLISTS_PREDEFINIDAS[0]["id"]
 
